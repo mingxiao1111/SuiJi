@@ -1,0 +1,4 @@
+<resources>
+    <!-- 深色模式用深色窗口主题，避免 Activity 启动瞬间白屏闪烁 -->
+    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar" />
+</resources>

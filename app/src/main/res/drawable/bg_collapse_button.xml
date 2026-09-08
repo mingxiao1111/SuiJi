@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 球把手底：颜色由代码按悬浮球主题色动态覆盖，此处为默认兜底 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#2E2E2E" />
+    <corners android:radius="29dp" />
+</shape>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 占位窗背景：深色半透明，深浅色系统下都可读（M4 按系统深浅色适配正式配色） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#E62A2A2E" />
+    <corners android:radius="12dp" />
+</shape>

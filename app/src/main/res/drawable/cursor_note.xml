@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 悬浮窗正文光标：中性灰 2.5dp 竖条（overlay 窗口下默认光标常不显示，显式指定；
+     灰色保证深浅两种窗口底色上都可见，v1.0.1 弃用品牌蓝） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#6E6E73" />
+    <size android:width="2.5dp" />
+</shape>

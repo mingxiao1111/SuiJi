@@ -1,0 +1,24 @@
+# Android 构建产物
+build/
+app/build/
+.gradle/
+local.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# 系统杂项
+.DS_Store
+Thumbs.db
+captures/
+.cxx/
+.externalNativeBuild/
+
+# Kotlin 编译器崩溃日志（本机 daemon 偶发崩溃产生）
+.kotlin/
+
+# 工具内部状态（mimosa 扫描钩子 / zcode 会话计划）
+.mimosa/
+.zcode/
