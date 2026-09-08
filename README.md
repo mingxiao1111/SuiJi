@@ -19,7 +19,7 @@
 
 ## 交互模型
 
-![两形态交互模型](docs/concept.png)
+
 
 **贴边竖条 ↔ 悬浮笔记窗**，两形态互斥、位置互相衔接（长条中心 = 竖条中心），"从哪来回哪去"：
 
@@ -49,11 +49,6 @@
 **数据**
 - 自动保存（1 秒防抖），数据只存本地 Room 数据库，无任何网络请求
 
-<div align="center">
-<img src="docs/screenshots/home.png" width="270" alt="主页"/>　
-<img src="docs/screenshots/collapsed.png" width="270" alt="收起态"/>　
-<img src="docs/screenshots/floating.png" width="270" alt="悬浮窗"/>
-</div>
 
 ## 下载
 
