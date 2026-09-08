@@ -3,7 +3,7 @@
 
 # 随记 · FloatNote
 
-**任何时候记一笔，不打断正在做的事。**
+**任何时候随手一点，记录转瞬即逝的灵感。**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-2e2e2e.svg)](LICENSE)
 [![Platform: Android](https://img.shields.io/badge/Platform-Android%208.0%2B-3ddc84?logo=android&logoColor=white)](https://developer.android.com)
@@ -73,19 +73,13 @@ gradlew testDebugUnitTest  # 单元测试
 ## 技术架构
 
 - **Kotlin** · 单 Activity + 单前台服务（specialUse）持有全部 overlay 窗口
-- **Jetpack Compose**（主界面列表 / 编辑 / 设置）+ **传统 View**（悬浮窗——overlay 场景 View 最稳，不混用）
-- **Room**（数据库 v3，迁移纪律：改实体必须 version+1 补 Migration，禁止破坏性重建）
+- **Jetpack Compose**（主界面列表 / 编辑 / 设置）+ **传统 View**（悬浮窗——overlay 场景 View ）
+- **Room**（数据库 v3 ）
 - **DataStore Preferences**（全部设置，驱动实时生效）· Coroutines/Flow
 - 触摸逻辑全部在 View 内自处理，Service 只管生命周期与设置分发
 
 核心源码导航见 [AGENTS.md](AGENTS.md)（含悬浮窗渲染 / 动画 / IME 避让等平台坑位全记录）。
 
-## 路线图
-
-- [ ] 首启隐私协议弹窗（上架合规）
-- [ ] 悬浮窗内多笔记切换
-- [ ] 主题与深色模式
-- [ ] 多语言（i18n）
 
 ## 许可
 
