@@ -1,6 +1,5 @@
 <div align="center">
 
-<img src="docs/banner.png" alt="随记 FloatNote" width="880"/>
 
 # 随记 · FloatNote
 
