@@ -1,5 +1,6 @@
 <div align="center">
 
+<img src="docs/banner.png" alt="随记 FloatNote" width="880"/>
 
 # 随记 · FloatNote
 
@@ -18,7 +19,7 @@
 
 ## 交互模型
 
-
+<img src="docs/concept.png" alt="两形态交互模型" width="880"/>
 
 **贴边竖条 ↔ 悬浮笔记窗**，两形态互斥、位置互相衔接（长条中心 = 竖条中心）：
 
@@ -77,9 +78,6 @@ gradlew testDebugUnitTest  # 单元测试
 - **Room**（数据库 v3 ）
 - **DataStore Preferences**（全部设置，驱动实时生效）· Coroutines/Flow
 - 触摸逻辑全部在 View 内自处理，Service 只管生命周期与设置分发
-
-核心源码导航见 [AGENTS.md](AGENTS.md)（含悬浮窗渲染 / 动画 / IME 避让等平台坑位全记录）。
-
 
 ## 许可
 

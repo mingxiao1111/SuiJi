@@ -7,38 +7,35 @@
   body {
     width: 1280px; height: 560px; overflow: hidden;
     font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
-    background: #f5f5f6; color: #1c1c1f; position: relative;
+    background: linear-gradient(160deg, #f7f7f8 0%, #ececed 100%); color: #1b1b1f;
+    position: relative;
   }
-  .head { text-align: center; padding: 40px 0 8px; }
-  .head .t { font-size: 30px; font-weight: 700; letter-spacing: 1px; }
-  .head .s { font-size: 16px; color: #8a8a92; margin-top: 8px; }
+  .head { text-align: center; padding: 42px 0 10px; }
+  .head .t { font-size: 30px; font-weight: 700; letter-spacing: 2px; }
+  .head .s { font-size: 16px; color: #8b8b93; margin-top: 9px; letter-spacing: 1px; }
 
-  .flow { display: flex; align-items: center; justify-content: center; gap: 26px; padding: 26px 60px 0; }
-  .step { width: 300px; text-align: center; }
+  .flow { display: flex; align-items: center; justify-content: center; gap: 30px; padding: 24px 56px 0; perspective: 1400px; }
+  .step { width: 296px; text-align: center; }
   .shot {
-    width: 250px; height: 445px; margin: 0 auto; border-radius: 22px; overflow: hidden;
-    box-shadow: 0 14px 44px rgba(0,0,0,0.16), 0 0 0 1px rgba(0,0,0,0.05);
-    position: relative; background: #fff;
+    width: 248px; height: 440px; margin: 0 auto; border-radius: 24px; overflow: hidden;
+    background: #000; position: relative;
+    box-shadow: 0 26px 60px -14px rgba(20,20,30,0.38), 0 6px 18px rgba(20,20,30,0.14);
   }
+  .shot::before { content:""; position:absolute; inset:-3px; border-radius:27px; z-index:-1;
+    background: linear-gradient(165deg,#4e4e55,#1c1c20); }
   .shot img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
-  .step .num {
-    display: inline-flex; width: 34px; height: 34px; border-radius: 50%;
-    background: #1c1c1f; color: #fff; font-size: 17px; font-weight: 700;
-    align-items: center; justify-content: center; margin: 18px 0 10px;
-  }
-  .step .name { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
-  .step .desc { font-size: 14.5px; color: #77777f; line-height: 1.55; padding: 0 8px; }
+  .shot .glare { position:absolute; inset:0;
+    background: linear-gradient(112deg, rgba(255,255,255,0.13), transparent 30%, transparent 75%, rgba(255,255,255,0.05)); }
+  .s1 .shot { transform: rotateY(14deg) rotateX(2deg); }
+  .s2 .shot { transform: translateY(-14px); }
+  .s3 .shot { transform: rotateY(-14deg) rotateX(2deg); }
 
-  .arrow { font-size: 34px; color: #b9b9c0; padding-bottom: 150px; font-weight: 300; }
-
-  .callout {
-    position: absolute; border-radius: 10px; padding: 5px 12px; font-size: 13.5px;
-    background: #1c1c1f; color: #fff; box-shadow: 0 6px 18px rgba(0,0,0,0.25);
-  }
-  .callout::after { content: ""; position: absolute; left: 22px; bottom: -5px; width: 10px; height: 10px; background: #1c1c1f; transform: rotate(45deg); }
-  .c1 { left: 128px; top: 262px; }
-  .c2 { left: 612px; top: 318px; }
-  .c3 { left: 1096px; top: 262px; }
+  .num { display:inline-flex; width:36px; height:36px; border-radius:50%;
+    background:#1b1b1f; color:#fff; font-size:17px; font-weight:700;
+    align-items:center; justify-content:center; margin:20px 0 10px; box-shadow: 0 6px 14px rgba(0,0,0,0.25); }
+  .name { font-size: 20px; font-weight: 650; margin-bottom: 6px; letter-spacing: 1px; }
+  .desc { font-size: 14.5px; color: #7d7d86; line-height: 1.6; padding: 0 10px; }
+  .arrow { font-size: 30px; color: #b3b3bb; padding-bottom: 140px; font-weight: 300; }
 </style>
 </head>
 <body>
@@ -47,29 +44,26 @@
     <div class="s">贴边竖条 ↔ 悬浮笔记窗 · 位置互相衔接 · 从哪来回哪去</div>
   </div>
   <div class="flow">
-    <div class="step">
-      <div class="shot"><img src="screenshots/collapsed.png"></div>
+    <div class="step s1">
+      <div class="shot"><img src="screenshots/collapsed.png"><div class="glare"></div></div>
       <div class="num">1</div>
       <div class="name">贴边待命</div>
       <div class="desc">半透明竖条贴在屏幕边缘，平时几乎不占注意力</div>
     </div>
     <div class="arrow">→</div>
-    <div class="step">
-      <div class="shot"><img src="screenshots/floating.png"></div>
+    <div class="step s2">
+      <div class="shot"><img src="screenshots/floating.png"><div class="glare"></div></div>
       <div class="num">2</div>
       <div class="name">一点即开</div>
       <div class="desc">点竖条，笔记窗原位浮现；键盘弹出时自动上浮避让</div>
     </div>
     <div class="arrow">→</div>
-    <div class="step">
-      <div class="shot"><img src="screenshots/home.png"></div>
+    <div class="step s3">
+      <div class="shot"><img src="screenshots/home.png"><div class="glare"></div></div>
       <div class="num">3</div>
       <div class="name">收起归档</div>
-      <div class="desc">点长条手柄收起，笔记自动保存，列表随时可查可搜</div>
+      <div class="desc">点长条手柄收起，笔记自动保存，列表可查可搜</div>
     </div>
   </div>
-  <div class="callout c1">竖条 · 30% 透明度</div>
-  <div class="callout c2">长条手柄：轻点收起 / 按住拖动</div>
-  <div class="callout c3">搜索 · 置顶 · 回收站</div>
 </body>
 </html>
