@@ -1,58 +1,101 @@
-# 随记（悬浮笔记）FloatNote
+<div align="center">
 
-一个 Android 悬浮笔记应用：任何时候，从屏幕边缘轻点唤出一个笔记窗口，写完收起，回到刚才在做的事。不打断，是它存在的全部理由。
+<img src="docs/banner.png" alt="随记 FloatNote" width="880"/>
 
-![收起态](docs/screenshots/collapsed.png)
-![展开态](docs/screenshots/floating.png)
-![主页](docs/screenshots/home.png)
+# 随记 · FloatNote
 
-> 截图待补（`docs/screenshots/` 内有说明），功能可直接构建体验。
+**任何时候记一笔，不打断正在做的事。**
 
-## 它是什么样的
+[![License: MIT](https://img.shields.io/badge/License-MIT-2e2e2e.svg)](LICENSE)
+[![Platform: Android](https://img.shields.io/badge/Platform-Android%208.0%2B-3ddc84?logo=android&logoColor=white)](https://developer.android.com)
+[![Language: Kotlin](https://img.shields.io/badge/Kotlin-Compose%20%2B%20View-7f52ff?logo=kotlin&logoColor=white)](https://kotlinlang.org)
+[![Release: v2.0](https://img.shields.io/badge/Release-v2.0-2e2e2e.svg)]()
 
-- **贴边竖条**：平时只在屏幕边缘留一根低调的半透明竖条（约 30% 透明度，可调），几乎不占注意力
-- **一点即开**：点竖条，笔记窗口原位浮现；点窗口左侧的长条手柄，整窗轻移淡出、竖条原位归来
-- **长条手柄**：窗口左缘（或右缘）的一体式长条——轻点收起、按住拖动移窗，与窗口同材质的渐变质感
-- **左右镜像**：工具栏 ⇄ 键一键整窗翻到屏幕另一侧，长条/缩放手柄/工具栏顺序全部镜像，单手党左右通吃
-- **键盘避让**：窗口在屏幕下半时唤起键盘，窗口自动浮到键盘上方；键盘收起自动落回
-- **双指缩放**：随手调整窗口大小，按钮工具栏自动适配宽度永不出现半个按钮
-- **自动保存 + 回收站**：1 秒防抖自动保存；删除先进回收站保留 30 天
-- **备份**：一键导出全部笔记为纯文本，可从文件导入（自动跳过重复）
+一个 Android 悬浮笔记应用：平时只在屏幕边缘留一根半透明竖条，点一下，笔记窗口原位浮现——写完收起，回到刚才的事。**不打断，是它存在的全部理由。**
 
-## 主界面
+</div>
 
-- 笔记列表：搜索（标题+正文）、置顶、长按操作
-- 编辑器：有序/无序列表、待办、时间戳，回车自动续点
-- 设置：悬浮窗外观（颜色/透明度/质感三档/圆角/厚度/长度）、贴边方向、开机自启、备份等，全部实时生效
+---
 
-## 技术栈
+## 交互模型
 
-Kotlin · Jetpack Compose（主界面）+ 传统 View（悬浮窗，overlay 用 View 最稳）· Room（数据库，含无损迁移）· DataStore Preferences · Coroutines/Flow · 单 Activity + 单前台服务持有全部 overlay 窗口
+![两形态交互模型](docs/concept.png)
+
+**贴边竖条 ↔ 悬浮笔记窗**，两形态互斥、位置互相衔接（长条中心 = 竖条中心），"从哪来回哪去"：
+
+| 操作 | 动作 |
+|---|---|
+| 点竖条 | 笔记窗**原位浮现**（200ms 减速淡入） |
+| 点长条手柄 | 整窗轻移淡出，竖条原位归来 |
+| 按住长条拖动 | 移动窗口位置 |
+| 双指捏合 / 拖角 | 调整窗口大小（工具栏自适应宽度，永不出现半个按钮） |
+| 工具栏 ⇄ 键 | 整窗翻到屏幕另一侧，左右布局全部镜像，单手通吃 |
+
+## 功能亮点
+
+**悬浮窗**
+- 贴边竖条收起态：约 30% 透明度（可调），几乎不占注意力
+- 键盘避让：窗口在屏幕下半时唤起键盘自动浮到键盘上方，收起键盘自动回落
+- 键盘优先：未聚焦时第一次点正文只弹键盘，再点才定位光标
+- 三档质感（标准 / 高光 / 柔光）、颜色 / 透明度 / 圆角 / 厚度 / 长度全参数化，实时生效
+- 开机自启（可选）：重启后悬浮窗自动回来
+
+**主界面**
+- 笔记列表：搜索（标题 + 正文）、置顶、长按操作
+- 编辑器：有序 / 无序列表、待办、时间戳，回车自动续点
+- 回收站：删除先进回收站保留 30 天，可恢复 / 彻底删除 / 清空
+- 备份：导出全部笔记为纯文本、从文件导入（自动跳过重复）
+
+**数据**
+- 自动保存（1 秒防抖），数据只存本地 Room 数据库，无任何网络请求
+
+<div align="center">
+<img src="docs/screenshots/home.png" width="270" alt="主页"/>　
+<img src="docs/screenshots/collapsed.png" width="270" alt="收起态"/>　
+<img src="docs/screenshots/floating.png" width="270" alt="悬浮窗"/>
+</div>
+
+## 下载
+
+从 [Releases](../../releases) 页面获取 APK 安装包。安装后：
+
+1. 打开应用，点顶栏「悬浮窗」
+2. 按系统引导授予"显示在其他应用上层"权限
+
+也可以自行构建（见下）。欢迎 [反馈问题](../../issues)。
 
 ## 构建
 
 ```bash
 git clone <本仓库>
 cd FloatNote
-gradlew assembleDebug     # Debug 包
-gradlew assembleRelease   # Release 包（沿项目惯例使用 debug 签名，如需发布请自行配置签名）
+gradlew assembleDebug      # Debug 包
+gradlew assembleRelease    # Release 包（沿项目惯例使用 debug 签名，发布请自行配置签名）
+gradlew testDebugUnitTest  # 单元测试
 ```
 
-要求：JDK 17+、Android SDK（compileSdk 35，minSdk 26）。单元测试：`gradlew testDebugUnitTest`。
+要求 JDK 17+、Android SDK（compileSdk 35，minSdk 26）。产物在 `app/build/outputs/apk/`。
 
-## 从源码安装
+## 技术架构
 
-构建产物位于 `app/build/outputs/apk/`。安装后请在应用内开启「悬浮窗」，并按系统引导授予"显示在其他应用上层"权限。
+- **Kotlin** · 单 Activity + 单前台服务（specialUse）持有全部 overlay 窗口
+- **Jetpack Compose**（主界面列表 / 编辑 / 设置）+ **传统 View**（悬浮窗——overlay 场景 View 最稳，不混用）
+- **Room**（数据库 v3，迁移纪律：改实体必须 version+1 补 Migration，禁止破坏性重建）
+- **DataStore Preferences**（全部设置，驱动实时生效）· Coroutines/Flow
+- 触摸逻辑全部在 View 内自处理，Service 只管生命周期与设置分发
+
+核心源码导航见 [AGENTS.md](AGENTS.md)（含悬浮窗渲染 / 动画 / IME 避让等平台坑位全记录）。
 
 ## 路线图
 
 - [ ] 首启隐私协议弹窗（上架合规）
-- [ ] 多笔记切换（悬浮窗内）
+- [ ] 悬浮窗内多笔记切换
 - [ ] 主题与深色模式
+- [ ] 多语言（i18n）
 
 ## 许可
 
-[MIT](LICENSE)——可自由使用、修改、分发，请保留版权声明。
+[MIT](LICENSE) —— 可自由使用、修改、分发，请保留版权声明。
 
 ## 致谢
 
