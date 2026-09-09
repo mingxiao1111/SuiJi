@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/banner.png" alt="随记 FloatNote" width="880"/>
+<img src="docs/banner.png" alt="随记 FloatNote" width="520"/>
 
 # 随记 · FloatNote
 
@@ -18,8 +18,6 @@
 ---
 
 ## 交互模型
-
-<img src="docs/concept.png" alt="两形态交互模型" width="880"/>
 
 **贴边竖条 ↔ 悬浮笔记窗**，两形态互斥、位置互相衔接（长条中心 = 竖条中心）：
 
