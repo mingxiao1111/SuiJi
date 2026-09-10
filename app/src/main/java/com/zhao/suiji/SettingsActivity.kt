@@ -22,6 +22,7 @@ class SettingsActivity : ComponentActivity() {
                     noteRepo = app.noteRepository,
                     secretStore = app.secretStore,
                     versionName = versionName,
+                    focusAi = intent.getBooleanExtra("focus_ai", false),
                 )
             }
         }

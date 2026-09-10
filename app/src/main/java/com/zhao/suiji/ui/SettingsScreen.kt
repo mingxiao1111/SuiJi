@@ -92,6 +92,7 @@ fun SettingsScreen(
     noteRepo: NoteRepository,
     secretStore: SecretStore,
     versionName: String,
+    focusAi: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -320,7 +321,7 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsGroup("AI 助手") {
+            SettingsGroup("AI 助手", expandedInitially = focusAi) {
                 AiSection(repo = repo, secretStore = secretStore, scope = scope)
             }
 
@@ -376,9 +377,10 @@ fun SettingsScreen(
 private fun SettingsGroup(
     title: String,
     collapsible: Boolean = true,
+    expandedInitially: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    var expanded by remember(title) { mutableStateOf(!collapsible) }
+    var expanded by remember(title) { mutableStateOf(!collapsible || expandedInitially) }
     val chevron by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
         label = "chevron",
@@ -605,6 +607,18 @@ private fun AiSection(
     var testing by remember { mutableStateOf(false) }
     var resultText by remember { mutableStateOf<String?>(null) }
     var resultOk by remember { mutableStateOf(false) }
+    val aiEnabled by repo.aiAssistantEnabled.collectAsStateWithLifecycle(initialValue = true)
+    val aiOrbAlpha by repo.aiOrbAlpha.collectAsStateWithLifecycle(initialValue = SettingsRepository.DEFAULT_AI_ORB_ALPHA)
+
+    SwitchRow("悬浮 AI 按钮（左下角）", aiEnabled) {
+        scope.launch { repo.setAiAssistantEnabled(it) }
+    }
+    SliderRow(
+        title = "按钮不透明度",
+        value = aiOrbAlpha,
+        min = 0.15f, max = 0.9f, steps = 14, // 5% 一档
+        display = "%.0f%%".format(aiOrbAlpha * 100),
+    ) { scope.launch { repo.setAiOrbAlpha(it) } }
 
     TextRow("接口地址（OpenAI 兼容）", aiBaseUrl, "https://api.deepseek.com") {
         scope.launch { repo.setAiBaseUrl(it) }

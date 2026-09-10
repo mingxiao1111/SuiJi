@@ -200,6 +200,12 @@ class SettingsRepository(private val context: Context) {
     val aiThinkModel: Flow<String> = store.data.map { it[AI_THINK_MODEL] ?: "" }
     val aiVisionModel: Flow<String> = store.data.map { it[AI_VISION_MODEL] ?: "" }
 
+    /** 三态组件总开关（左下角圆钮显示与否）。 */
+    val aiAssistantEnabled: Flow<Boolean> = store.data.map { it[AI_ASSISTANT_ENABLED] ?: true }
+
+    /** 圆钮背景不透明度。 */
+    val aiOrbAlpha: Flow<Float> = store.data.map { it[AI_ORB_ALPHA] ?: DEFAULT_AI_ORB_ALPHA }
+
     /** 一次性读取全部设置（服务启动 / 调试用）。 */
     suspend fun snapshot(): FloatSettings {
         val p = store.data.first()
@@ -336,6 +342,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAiVisionModel(model: String) = store.edit { it[AI_VISION_MODEL] = model.trim() }
 
+    suspend fun setAiAssistantEnabled(enabled: Boolean) = store.edit { it[AI_ASSISTANT_ENABLED] = enabled }
+
+    suspend fun setAiOrbAlpha(alpha: Float) = store.edit { it[AI_ORB_ALPHA] = alpha.coerceIn(0.15f, 0.9f) }
+
     companion object {
         private val BALL_X = intPreferencesKey("ball_x")
         private val BALL_Y = intPreferencesKey("ball_y")
@@ -386,6 +396,8 @@ class SettingsRepository(private val context: Context) {
         private val AI_CHAT_MODEL = stringPreferencesKey("ai_chat_model")
         private val AI_THINK_MODEL = stringPreferencesKey("ai_think_model")
         private val AI_VISION_MODEL = stringPreferencesKey("ai_vision_model")
+        private val AI_ASSISTANT_ENABLED = booleanPreferencesKey("ai_assistant_enabled")
+        private val AI_ORB_ALPHA = floatPreferencesKey("ai_orb_alpha")
 
         const val DEFAULT_BALL_SIZE_DP = 48
         const val DEFAULT_BALL_COLOR = "#2E2E2E" // v1.0.1 黑白系：旧默认蓝 #4A90D9 读取时自动迁移
@@ -407,6 +419,7 @@ class SettingsRepository(private val context: Context) {
         const val DEFAULT_WINDOW_HEIGHT = 210
         const val DEFAULT_COLLAPSE_DELAY_MS = 30_000L
         const val DEFAULT_FONT_SIZE_SP = 15
+        const val DEFAULT_AI_ORB_ALPHA = 0.35f // 圆钮背景不透明度（图标不受影响）
 
         // FRADE_ON_EDGE_KEY 名字打错了，但作为存储 key 一旦发布不可再改；此处保持一致
         private val FADE_ON_EDGE = FRADE_ON_EDGE_KEY

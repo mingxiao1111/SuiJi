@@ -12,6 +12,12 @@ import androidx.core.app.NotificationCompat
 import com.zhao.suiji.FloatNoteApp
 import com.zhao.suiji.MainActivity
 import com.zhao.suiji.R
+import com.zhao.suiji.SettingsActivity
+import com.zhao.suiji.ai.AiChatClient
+import com.zhao.suiji.ai.AiConfig
+import com.zhao.suiji.ai.ChatEvent
+import com.zhao.suiji.ai.ChatMessage
+import com.zhao.suiji.ai.RequestMessage
 import com.zhao.suiji.data.SettingsRepository
 import com.zhao.suiji.data.Side
 import com.zhao.suiji.manager.AutoCollapseManager
@@ -19,9 +25,13 @@ import com.zhao.suiji.manager.AutoSaveManager
 import com.zhao.suiji.manager.WindowManagerHelper
 import com.zhao.suiji.text.NoteTextUtils
 import com.zhao.suiji.util.ScreenUtils
+import com.zhao.suiji.view.AiAskView
+import com.zhao.suiji.view.AiOrbView
+import com.zhao.suiji.view.AiPanelView
 import com.zhao.suiji.view.FloatingBallView
 import com.zhao.suiji.view.FloatingNoteWindowView
 import com.zhao.suiji.view.ToolbarAction
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -85,6 +95,7 @@ class FloatingNoteService : Service() {
         observeWindowSettings()
         observeAutoCollapse()
         observeSide()
+        observeAiSettings()
         showStick()
     }
 
@@ -100,6 +111,7 @@ class FloatingNoteService : Service() {
         val screenH = wmHelper.screenHeight
         windowView?.onScreenChanged(screenW, screenH)
         ballView?.onScreenChanged(screenW, screenH)
+        if (aiUiState != AiUiState.NONE) closeAiUi() // AI 窗口尺寸随屏算，旋转直接收起（T3 再做重建）
     }
 
     /**
@@ -114,6 +126,10 @@ class FloatingNoteService : Service() {
             windowView = null
             ballView?.detach()
             ballView = null
+            aiOrb?.detach()
+            aiOrb = null
+            detachAiUi()
+            aiUiState = AiUiState.NONE
             stopSelf()
         }
         return false
@@ -131,6 +147,11 @@ class FloatingNoteService : Service() {
         windowView = null
         ballView?.detach()
         ballView = null
+        aiGenJob?.cancel()
+        aiOrb?.detach()
+        aiOrb = null
+        detachAiUi()
+        aiUiState = AiUiState.NONE
         super.onDestroy()
     }
 
@@ -233,6 +254,7 @@ class FloatingNoteService : Service() {
     private fun expandWindow() {
         if (!ensureOverlayPermissionAlive()) return
         if (windowView != null || expanding) return
+        if (aiUiState != AiUiState.NONE) closeAiUi() // AI 开着时点竖条：先收 AI，笔记窗优先
         expanding = true
         scope.launch {
             val s = settings.snapshot()
@@ -527,6 +549,211 @@ class FloatingNoteService : Service() {
             hideBall()
             showStick(yHint, slideIn = true)
         }
+    }
+
+    // ---- AI 助手（v2.1 三态：左下圆钮 → 极简输入框 → 展开面板，独立于笔记窗）----
+
+    private enum class AiUiState { NONE, ASK, PANEL }
+
+    private var aiOrb: AiOrbView? = null
+    private var aiAsk: AiAskView? = null
+    private var aiPanel: AiPanelView? = null
+    private var aiUiState = AiUiState.NONE
+
+    private val aiClient = AiChatClient()
+    private val aiMessages = mutableListOf<ChatMessage>()
+    private var aiGenerating = false
+    private var aiSeq = 0L
+    private var aiGenJob: Job? = null
+    private var aiCfg: AiConfig? = null
+
+    @Volatile private var aiEnabled = true
+    @Volatile private var aiOrbAlphaVal = SettingsRepository.DEFAULT_AI_ORB_ALPHA
+
+    /** 订阅 AI 开关与圆钮透明度：开关实时挂/摘圆钮。 */
+    private fun observeAiSettings() {
+        scope.launch {
+            combine(settings.aiAssistantEnabled, settings.aiOrbAlpha) { e, a -> e to a }.collect { (e, a) ->
+                aiEnabled = e
+                aiOrbAlphaVal = a
+                if (e) {
+                    if (aiOrb == null) attachAiOrb() else aiOrb?.applyAlpha(a)
+                } else {
+                    aiOrb?.detach()
+                    aiOrb = null
+                    if (aiUiState != AiUiState.NONE) closeAiUi()
+                }
+            }
+        }
+    }
+
+    private fun attachAiOrb() {
+        if (!ensureOverlayPermissionAlive()) return
+        aiOrb?.detach()
+        aiOrb = AiOrbView(this).apply {
+            applyAlpha(aiOrbAlphaVal)
+            setGenerating(aiGenerating)
+            onActivate = { onAiOrbTap() }
+            attach(getSystemService(WINDOW_SERVICE) as WindowManager, wmHelper.screenWidth, wmHelper.screenHeight)
+        }
+    }
+
+    private fun onAiOrbTap() {
+        scope.launch {
+            val cfg = loadAiConfig()
+            if (!cfg.isConfigured) {
+                // 未配置：直达设置页并展开 AI 组（PRD v2 首次配置）
+                runCatching {
+                    startActivity(
+                        Intent(this@FloatingNoteService, SettingsActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            .putExtra("focus_ai", true),
+                    )
+                }
+                return@launch
+            }
+            aiCfg = cfg
+            if (windowView != null) collapseWindow() // 笔记窗自动收起为竖条（PRD v2）
+            if (aiMessages.isEmpty()) showAiAsk() else showAiPanel()
+        }
+    }
+
+    private suspend fun loadAiConfig(): AiConfig = AiConfig(
+        baseUrl = settings.aiBaseUrl.first(),
+        apiKey = app.secretStore.getApiKey(),
+        chatModel = settings.aiChatModel.first(),
+        thinkModel = settings.aiThinkModel.first(),
+        visionModel = settings.aiVisionModel.first(),
+    )
+
+    private fun showAiAsk() {
+        detachAiUi()
+        aiOrb?.detach() // 圆钮与输入框/面板互斥：打开即隐，收起才回
+        aiOrb = null
+        aiUiState = AiUiState.ASK
+        aiAsk = AiAskView(this).apply {
+            onSend = { aiSubmit(it) }
+            onChip = { aiChip(it) }
+            onOutside = { closeAiUi() }
+            attach(getSystemService(WINDOW_SERVICE) as WindowManager, wmHelper.screenWidth, wmHelper.screenHeight)
+        }
+    }
+
+    private fun showAiPanel() {
+        detachAiUi()
+        aiOrb?.detach()
+        aiOrb = null
+        aiUiState = AiUiState.PANEL
+        aiPanel = AiPanelView(this).apply {
+            onSend = { aiSubmit(it) }
+            onClose = { closeAiUi() }
+            onRetry = { aiRetry(it) }
+            attach(getSystemService(WINDOW_SERVICE) as WindowManager, wmHelper.screenWidth, wmHelper.screenHeight)
+            renderAll(aiMessages.toList())
+            setSendEnabled(!aiGenerating)
+        }
+    }
+
+    private fun detachAiUi() {
+        aiAsk?.detach()
+        aiAsk = null
+        aiPanel?.detach()
+        aiPanel = null
+    }
+
+    /** 面板 ✕ / 点输入框外 / 开关关闭：回圆钮。生成不中断，圆钮呼吸点接力。 */
+    private fun closeAiUi() {
+        detachAiUi()
+        aiUiState = AiUiState.NONE
+        if (aiEnabled) attachAiOrb()
+    }
+
+    private fun aiSubmit(raw: String) {
+        val text = raw.trim()
+        if (text.isEmpty() || aiGenerating) return
+        aiMessages += ChatMessage(++aiSeq, ChatMessage.Role.USER, text)
+        if (aiUiState != AiUiState.PANEL) showAiPanel() else aiPanel?.addMessage(aiMessages.last())
+        startAiGeneration()
+    }
+
+    /** 建议指令：整理/总结携带当前笔记正文；解释/翻译作用于输入框草稿。 */
+    private fun aiChip(id: String) {
+        scope.launch {
+            val draft = aiAsk?.inputField?.text?.toString()?.trim().orEmpty()
+            when (id) {
+                AiAskView.CHIP_ORGANIZE ->
+                    aiSubmitWithNote("请把下面的笔记整理成结构清晰的笔记，给出标题、分点和待办清单：")
+                AiAskView.CHIP_SUMMARIZE -> aiSubmitWithNote("请用几句话总结下面的笔记内容：")
+                AiAskView.CHIP_EXPLAIN -> if (draft.isNotEmpty()) aiSubmit("请解释：$draft")
+                AiAskView.CHIP_TRANSLATE ->
+                    if (draft.isNotEmpty()) aiSubmit("请把下面的内容翻译成英文：\n$draft")
+            }
+        }
+    }
+
+    private suspend fun aiSubmitWithNote(instruction: String) {
+        val note = app.noteRepository.getNote(currentNoteId)
+        if (note == null || note.content.isBlank()) return
+        aiSubmit("$instruction\n\n${note.content}")
+    }
+
+    private fun startAiGeneration() {
+        val cfg = aiCfg ?: return
+        if (aiGenerating) return
+        val reply = ChatMessage(++aiSeq, ChatMessage.Role.ASSISTANT, "", ChatMessage.State.STREAMING)
+        aiMessages += reply
+        aiPanel?.addMessage(reply)
+        aiGenerating = true
+        aiPanel?.setSendEnabled(false)
+        aiOrb?.setGenerating(true)
+        val history = aiMessages
+            .filter { it.state != ChatMessage.State.FAILED && it.text.isNotBlank() }
+            .takeLast(20)
+            .map { RequestMessage(if (it.role == ChatMessage.Role.USER) "user" else "assistant", it.text) }
+        aiGenJob = scope.launch {
+            val idx = aiMessages.indexOf(reply)
+            val buf = StringBuilder()
+            var received = false
+            var errorMsg: String? = null
+            try {
+                aiClient.streamReply(cfg, cfg.chatModel, history).collect { ev ->
+                    when (ev) {
+                        is ChatEvent.Delta -> {
+                            received = true
+                            buf.append(ev.text)
+                            aiMessages[idx] = reply.copy(text = buf.toString())
+                            aiPanel?.updateMessage(aiMessages[idx])
+                        }
+                        is ChatEvent.Done -> Unit
+                        is ChatEvent.HttpError -> errorMsg = ev.message
+                    }
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
+                errorMsg = e.message ?: "连接中断"
+            }
+            val final = when {
+                errorMsg != null -> reply.copy(state = ChatMessage.State.FAILED, text = errorMsg!!)
+                received -> reply.copy(state = ChatMessage.State.DONE, text = buf.toString())
+                else -> reply.copy(state = ChatMessage.State.FAILED, text = "连接中断，回答未完成")
+            }
+            if (idx in aiMessages.indices) aiMessages[idx] = final
+            aiPanel?.updateMessage(final)
+            aiGenerating = false
+            aiPanel?.setSendEnabled(true)
+            aiOrb?.setGenerating(false)
+        }
+    }
+
+    /** 失败重试：移除失败占位，用同一上下文重新生成。 */
+    private fun aiRetry(msgId: Long) {
+        val idx = aiMessages.indexOfFirst { it.id == msgId }
+        if (idx >= 0) {
+            aiMessages.removeAt(idx)
+            aiPanel?.renderAll(aiMessages.toList())
+        }
+        startAiGeneration()
     }
 
     private fun handleToolbarAction(action: ToolbarAction) {
