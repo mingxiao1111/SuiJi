@@ -18,6 +18,7 @@ import com.zhao.suiji.ai.AiConfig
 import com.zhao.suiji.ai.ChatEvent
 import com.zhao.suiji.ai.ChatMessage
 import com.zhao.suiji.ai.RequestMessage
+import com.zhao.suiji.data.Note
 import com.zhao.suiji.data.SettingsRepository
 import com.zhao.suiji.data.Side
 import com.zhao.suiji.manager.AutoCollapseManager
@@ -37,6 +38,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -566,6 +568,7 @@ class FloatingNoteService : Service() {
     private var aiSeq = 0L
     private var aiGenJob: Job? = null
     private var aiCfg: AiConfig? = null
+    private var aiDraft = "" // 输入框未发送草稿：收起/切换后保留（T3）
 
     @Volatile private var aiEnabled = true
     @Volatile private var aiOrbAlphaVal = SettingsRepository.DEFAULT_AI_ORB_ALPHA
@@ -614,9 +617,18 @@ class FloatingNoteService : Service() {
             }
             aiCfg = cfg
             if (windowView != null) collapseWindow() // 笔记窗自动收起为竖条（PRD v2）
-            if (aiMessages.isEmpty()) showAiAsk() else showAiPanel()
+            if (aiMessages.isEmpty()) {
+                val noteReady = aiNoteContext()?.content?.isNotBlank() == true
+                showAiAsk(noteReady)
+            } else {
+                showAiPanel(growFromInput = false)
+            }
         }
     }
+
+    /** 建议指令的笔记上下文：优先当前绑定，无则最近一篇（悬浮窗没开过也有得整理）。 */
+    private suspend fun aiNoteContext(): Note? =
+        app.noteRepository.getNote(currentNoteId) ?: app.noteRepository.getLatestNote()
 
     private suspend fun loadAiConfig(): AiConfig = AiConfig(
         baseUrl = settings.aiBaseUrl.first(),
@@ -626,7 +638,7 @@ class FloatingNoteService : Service() {
         visionModel = settings.aiVisionModel.first(),
     )
 
-    private fun showAiAsk() {
+    private fun showAiAsk(noteChipsEnabled: Boolean) {
         detachAiUi()
         aiOrb?.detach() // 圆钮与输入框/面板互斥：打开即隐，收起才回
         aiOrb = null
@@ -635,11 +647,13 @@ class FloatingNoteService : Service() {
             onSend = { aiSubmit(it) }
             onChip = { aiChip(it) }
             onOutside = { closeAiUi() }
+            setNoteChipsEnabled(noteChipsEnabled)
             attach(getSystemService(WINDOW_SERVICE) as WindowManager, wmHelper.screenWidth, wmHelper.screenHeight)
+            if (aiDraft.isNotEmpty()) inputField.setText(aiDraft) // 草稿回填（T3）
         }
     }
 
-    private fun showAiPanel() {
+    private fun showAiPanel(growFromInput: Boolean) {
         detachAiUi()
         aiOrb?.detach()
         aiOrb = null
@@ -648,7 +662,11 @@ class FloatingNoteService : Service() {
             onSend = { aiSubmit(it) }
             onClose = { closeAiUi() }
             onRetry = { aiRetry(it) }
-            attach(getSystemService(WINDOW_SERVICE) as WindowManager, wmHelper.screenWidth, wmHelper.screenHeight)
+            attach(
+                getSystemService(WINDOW_SERVICE) as WindowManager,
+                wmHelper.screenWidth, wmHelper.screenHeight,
+                growFromInput,
+            )
             renderAll(aiMessages.toList())
             setSendEnabled(!aiGenerating)
         }
@@ -661,8 +679,9 @@ class FloatingNoteService : Service() {
         aiPanel = null
     }
 
-    /** 面板 ✕ / 点输入框外 / 开关关闭：回圆钮。生成不中断，圆钮呼吸点接力。 */
+    /** 面板 ✕ / 点输入框外 / 开关关闭：回圆钮。生成不中断，圆钮呼吸点接力；草稿保留。 */
     private fun closeAiUi() {
+        aiAsk?.let { aiDraft = it.inputField.text?.toString().orEmpty() }
         detachAiUi()
         aiUiState = AiUiState.NONE
         if (aiEnabled) attachAiOrb()
@@ -671,8 +690,13 @@ class FloatingNoteService : Service() {
     private fun aiSubmit(raw: String) {
         val text = raw.trim()
         if (text.isEmpty() || aiGenerating) return
+        aiDraft = "" // 已发送不再是草稿
         aiMessages += ChatMessage(++aiSeq, ChatMessage.Role.USER, text)
-        if (aiUiState != AiUiState.PANEL) showAiPanel() else aiPanel?.addMessage(aiMessages.last())
+        if (aiUiState != AiUiState.PANEL) {
+            showAiPanel(growFromInput = true) // 输入框原位向上生长成面板（T3）
+        } else {
+            aiPanel?.addMessage(aiMessages.last())
+        }
         startAiGeneration()
     }
 
@@ -692,7 +716,7 @@ class FloatingNoteService : Service() {
     }
 
     private suspend fun aiSubmitWithNote(instruction: String) {
-        val note = app.noteRepository.getNote(currentNoteId)
+        val note = aiNoteContext()
         if (note == null || note.content.isBlank()) return
         aiSubmit("$instruction\n\n${note.content}")
     }
@@ -715,14 +739,28 @@ class FloatingNoteService : Service() {
             val buf = StringBuilder()
             var received = false
             var errorMsg: String? = null
+            var flushPending = false
+            fun pushText() {
+                if (idx in aiMessages.indices) {
+                    aiMessages[idx] = reply.copy(text = buf.toString())
+                    aiPanel?.updateMessage(aiMessages[idx])
+                }
+            }
             try {
                 aiClient.streamReply(cfg, cfg.chatModel, history).collect { ev ->
                     when (ev) {
                         is ChatEvent.Delta -> {
                             received = true
                             buf.append(ev.text)
-                            aiMessages[idx] = reply.copy(text = buf.toString())
-                            aiPanel?.updateMessage(aiMessages[idx])
+                            // 打字机合帧：每 80ms 刷一次（~12fps），低端机扛得住逐 token 的重排
+                            if (!flushPending) {
+                                flushPending = true
+                                scope.launch {
+                                    delay(80)
+                                    flushPending = false
+                                    pushText()
+                                }
+                            }
                         }
                         is ChatEvent.Done -> Unit
                         is ChatEvent.HttpError -> errorMsg = ev.message

@@ -33,6 +33,9 @@ class AiAskView(context: Context) : FrameLayout(context) {
 
     val inputField: EditText
     private var sendEnabled = true
+    private var noteChipsEnabled = false
+    private var chipOrganize: TextView? = null
+    private var chipSummarize: TextView? = null
 
     var onSend: ((String) -> Unit)? = null
     var onChip: ((String) -> Unit)? = null
@@ -84,16 +87,24 @@ class AiAskView(context: Context) : FrameLayout(context) {
             CHIP_TRANSLATE to "翻译",
             CHIP_SUMMARIZE to "总结",
         ).forEach { (id, label) ->
+            val chip = TextView(context).apply {
+                text = label
+                textSize = 12f
+                setTextColor(AiStyle.textPrimary(night))
+                background = AiStyle.roundBg(AiStyle.surface(night), 999f, density, AiStyle.stroke(night))
+                setPadding(dp(12), dp(7), dp(12), dp(7))
+                elevation = dp(3).toFloat()
+                setOnClickListener {
+                    val needsNote = id == CHIP_ORGANIZE || id == CHIP_SUMMARIZE
+                    if (!needsNote || noteChipsEnabled) onChip?.invoke(id)
+                }
+            }
+            when (id) {
+                CHIP_ORGANIZE -> chipOrganize = chip
+                CHIP_SUMMARIZE -> chipSummarize = chip
+            }
             chips.addView(
-                TextView(context).apply {
-                    text = label
-                    textSize = 12f
-                    setTextColor(AiStyle.textPrimary(night))
-                    background = AiStyle.roundBg(AiStyle.surface(night), 999f, density, AiStyle.stroke(night))
-                    setPadding(dp(12), dp(7), dp(12), dp(7))
-                    elevation = dp(3).toFloat()
-                    setOnClickListener { onChip?.invoke(id) }
-                },
+                chip,
                 LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                     .apply { marginEnd = dp(7) },
             )
@@ -146,6 +157,14 @@ class AiAskView(context: Context) : FrameLayout(context) {
     fun setSendEnabled(enabled: Boolean) {
         sendEnabled = enabled
         (getChildAt(0) as? LinearLayout)?.let { /* 预留：生成中态由面板承载 */ }
+    }
+
+    /** 整理这篇/总结依赖笔记内容：无笔记置灰（T3）。 */
+    fun setNoteChipsEnabled(enabled: Boolean) {
+        noteChipsEnabled = enabled
+        val alpha = if (enabled) 1f else 0.4f
+        chipOrganize?.alpha = alpha
+        chipSummarize?.alpha = alpha
     }
 
     /** 点输入框外区域收起（FLAG_WATCH_OUTSIDE_TOUCH 的 ACTION_OUTSIDE）。 */

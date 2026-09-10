@@ -131,7 +131,8 @@ class AiPanelView(context: Context) : FrameLayout(context) {
         )
     }
 
-    fun attach(wm: WindowManager, screenW: Int, screenH: Int) {
+    /** [growFromInput]=true：底部中心支点向上生长（发送瞬间"输入框原位展开成面板"的形变，T3）。 */
+    fun attach(wm: WindowManager, screenW: Int, screenH: Int, growFromInput: Boolean = false) {
         windowManager = wm
         screenHeight = screenH
         screenHeightPx = screenH
@@ -147,10 +148,21 @@ class AiPanelView(context: Context) : FrameLayout(context) {
             gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
             y = -dp(BASE_BOTTOM_MARGIN_DP) // BOTTOM 锚定：正值往屏外推，留边用负值
         }
-        alpha = 0f
-        scaleX = 0.96f
-        runCatching { wm.addView(this, params) }
-        animate().alpha(1f).scaleX(1f).setDuration(180L).start()
+        if (growFromInput) {
+            pivotX = wPx / 2f
+            pivotY = hPx.toFloat()
+            alpha = 0f
+            scaleY = 0.25f
+            runCatching { wm.addView(this, params) }
+            animate().alpha(1f).scaleY(1f).setDuration(240L)
+                .setInterpolator(android.view.animation.DecelerateInterpolator())
+                .start()
+        } else {
+            alpha = 0f
+            scaleX = 0.96f
+            runCatching { wm.addView(this, params) }
+            animate().alpha(1f).scaleX(1f).setDuration(180L).start()
+        }
         handler.postDelayed(imeCheck, 400L)
     }
 
