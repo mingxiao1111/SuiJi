@@ -12,12 +12,16 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- 开机自启悬浮窗（v1.2，需在设置中打开） -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- AI 助手（v2.1）：访问用户自配的 AI 接口；其余功能零网络 -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- 明文流量放行：仅 AI 功能联网且端点由用户自配，为局域网/本地模型（http://）留路 -->
     <application
         android:name=".FloatNoteApp"
         android:allowBackup="true"
         android:label="@string/app_name"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/AppTheme">
         <activity
             android:name=".MainActivity"

@@ -193,6 +193,13 @@ class SettingsRepository(private val context: Context) {
 
     val lastNoteId: Flow<Long> = store.data.map { it[LAST_NOTE_ID] ?: 0L }
 
+    // ---- AI 助手（v2.1）：OpenAI 兼容接口配置；API Key 加密存 SecretStore，不进 DataStore ----
+
+    val aiBaseUrl: Flow<String> = store.data.map { it[AI_BASE_URL] ?: "" }
+    val aiChatModel: Flow<String> = store.data.map { it[AI_CHAT_MODEL] ?: "" }
+    val aiThinkModel: Flow<String> = store.data.map { it[AI_THINK_MODEL] ?: "" }
+    val aiVisionModel: Flow<String> = store.data.map { it[AI_VISION_MODEL] ?: "" }
+
     /** 一次性读取全部设置（服务启动 / 调试用）。 */
     suspend fun snapshot(): FloatSettings {
         val p = store.data.first()
@@ -321,6 +328,14 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setLastNoteId(noteId: Long) = store.edit { it[LAST_NOTE_ID] = noteId }
 
+    suspend fun setAiBaseUrl(url: String) = store.edit { it[AI_BASE_URL] = url.trim() }
+
+    suspend fun setAiChatModel(model: String) = store.edit { it[AI_CHAT_MODEL] = model.trim() }
+
+    suspend fun setAiThinkModel(model: String) = store.edit { it[AI_THINK_MODEL] = model.trim() }
+
+    suspend fun setAiVisionModel(model: String) = store.edit { it[AI_VISION_MODEL] = model.trim() }
+
     companion object {
         private val BALL_X = intPreferencesKey("ball_x")
         private val BALL_Y = intPreferencesKey("ball_y")
@@ -366,6 +381,11 @@ class SettingsRepository(private val context: Context) {
         private val BOOT_AUTO_START = booleanPreferencesKey("boot_auto_start")
 
         private val LAST_NOTE_ID = longPreferencesKey("last_note_id")
+
+        private val AI_BASE_URL = stringPreferencesKey("ai_base_url")
+        private val AI_CHAT_MODEL = stringPreferencesKey("ai_chat_model")
+        private val AI_THINK_MODEL = stringPreferencesKey("ai_think_model")
+        private val AI_VISION_MODEL = stringPreferencesKey("ai_vision_model")
 
         const val DEFAULT_BALL_SIZE_DP = 48
         const val DEFAULT_BALL_COLOR = "#2E2E2E" // v1.0.1 黑白系：旧默认蓝 #4A90D9 读取时自动迁移

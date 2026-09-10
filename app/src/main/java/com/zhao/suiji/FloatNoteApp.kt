@@ -23,6 +23,9 @@ class FloatNoteApp : Application() {
 
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(this) }
 
+    /** 敏感值（AI API Key）加密存储，与普通设置分离。 */
+    val secretStore: com.zhao.suiji.data.SecretStore by lazy { com.zhao.suiji.data.SecretStore(this) }
+
     override fun onCreate() {
         super.onCreate()
         // 回收站过期清除（30 天保留期）放启动时机，失败静默——下次启动还会再清

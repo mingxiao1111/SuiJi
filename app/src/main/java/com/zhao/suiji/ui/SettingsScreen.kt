@@ -28,6 +28,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -51,9 +52,15 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zhao.suiji.ai.AiConfig
+import com.zhao.suiji.ai.AiConnectionTester
+import com.zhao.suiji.ai.TestResult
 import com.zhao.suiji.data.NoteRepository
+import com.zhao.suiji.data.SecretStore
 import com.zhao.suiji.data.SettingsRepository
 import com.zhao.suiji.data.ToolbarButton
 import com.zhao.suiji.view.ToolbarAction
@@ -83,6 +90,7 @@ private val UL_STYLES = listOf("• ", "- ", "· ")
 fun SettingsScreen(
     repo: SettingsRepository,
     noteRepo: NoteRepository,
+    secretStore: SecretStore,
     versionName: String,
 ) {
     val scope = rememberCoroutineScope()
@@ -310,6 +318,10 @@ fun SettingsScreen(
                         }
                     }
                 }
+            }
+
+            SettingsGroup("AI 助手") {
+                AiSection(repo = repo, secretStore = secretStore, scope = scope)
             }
 
             SettingsGroup("备份", collapsible = false) {
@@ -573,6 +585,122 @@ private fun ActionRow(title: String, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
     )
+}
+
+/**
+ * AI 助手配置（v2.1）：OpenAI 兼容接口 + Key（加密存 SecretStore）+ 三个模型。
+ * Key 不走 DataStore Flow，本地状态直读直写；其余项与其他设置一样即时保存。
+ */
+@Composable
+private fun AiSection(
+    repo: SettingsRepository,
+    secretStore: SecretStore,
+    scope: kotlinx.coroutines.CoroutineScope,
+) {
+    val aiBaseUrl by repo.aiBaseUrl.collectAsStateWithLifecycle(initialValue = "")
+    val aiChatModel by repo.aiChatModel.collectAsStateWithLifecycle(initialValue = "")
+    val aiThinkModel by repo.aiThinkModel.collectAsStateWithLifecycle(initialValue = "")
+    val aiVisionModel by repo.aiVisionModel.collectAsStateWithLifecycle(initialValue = "")
+    var apiKey by remember { mutableStateOf(secretStore.getApiKey()) }
+    var testing by remember { mutableStateOf(false) }
+    var resultText by remember { mutableStateOf<String?>(null) }
+    var resultOk by remember { mutableStateOf(false) }
+
+    TextRow("接口地址（OpenAI 兼容）", aiBaseUrl, "https://api.deepseek.com") {
+        scope.launch { repo.setAiBaseUrl(it) }
+    }
+    TextRow("API Key（加密存本机）", apiKey, "sk-…", password = true) { v ->
+        apiKey = v
+        secretStore.setApiKey(v)
+    }
+    TextRow("普通模型（必填）", aiChatModel, "deepseek-chat") {
+        scope.launch { repo.setAiChatModel(it) }
+    }
+    TextRow("思考模型（选填）", aiThinkModel, "悬浮窗思考开关开启时改用") {
+        scope.launch { repo.setAiThinkModel(it) }
+    }
+    TextRow("视觉模型（选填）", aiVisionModel, "发送图片时改用") {
+        scope.launch { repo.setAiVisionModel(it) }
+    }
+    ActionRow(if (testing) "测试连接中…" else "测试连接") {
+        if (testing) return@ActionRow
+        testing = true
+        resultText = null
+        scope.launch {
+            val result = AiConnectionTester.test(
+                AiConfig(aiBaseUrl, apiKey, aiChatModel, aiThinkModel, aiVisionModel),
+            )
+            var ok = false
+            resultText = when (result) {
+                is TestResult.Success -> {
+                    ok = true
+                    buildString {
+                        append("连接成功（${result.latencyMs}ms）")
+                        if (result.modelIds.isNotEmpty()) {
+                            append(" · 服务商返回 ${result.modelIds.size} 个模型")
+                            if (aiChatModel.isNotBlank() && aiChatModel !in result.modelIds) {
+                                append("\n注意：「普通模型」不在返回列表中")
+                            }
+                        }
+                    }
+                }
+                is TestResult.AuthError -> "Key 无效或无权限：${result.detail}"
+                is TestResult.HttpError -> "接口返回错误：${result.detail}"
+                is TestResult.NetworkError -> "网络错误：${result.detail}（检查地址与网络）"
+            }
+            resultOk = ok
+            testing = false
+        }
+    }
+    if (resultText != null) {
+        Text(
+            resultText!!,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (resultOk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+    }
+    Text(
+        "笔记数据仍只存本机；仅在你主动使用 AI 时访问以上接口。",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+    )
+}
+
+@Composable
+private fun TextRow(
+    title: String,
+    value: String,
+    placeholder: String,
+    password: Boolean = false,
+    onChange: (String) -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.bodyLarge)
+        var visible by remember(title) { mutableStateOf(!password) }
+        OutlinedTextField(
+            value = value,
+            onValueChange = onChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            placeholder = { Text(placeholder) },
+            singleLine = true,
+            visualTransformation = if (password && !visible) PasswordVisualTransformation() else VisualTransformation.None,
+            trailingIcon = if (password) {
+                {
+                    TextButton(onClick = { visible = !visible }) {
+                        Text(if (visible) "隐藏" else "显示")
+                    }
+                }
+            } else null,
+        )
+    }
 }
 
 /**

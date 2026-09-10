@@ -20,6 +20,7 @@ class SettingsActivity : ComponentActivity() {
                 SettingsScreen(
                     repo = app.settingsRepository,
                     noteRepo = app.noteRepository,
+                    secretStore = app.secretStore,
                     versionName = versionName,
                 )
             }
