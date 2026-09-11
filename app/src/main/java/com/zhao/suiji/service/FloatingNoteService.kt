@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Rect
 import android.os.Build
 import android.os.IBinder
 import android.view.WindowManager
@@ -566,6 +567,8 @@ class FloatingNoteService : Service() {
     private var aiGenJob: Job? = null
     private var aiCfg: AiConfig? = null
     private var aiDraft = "" // 输入框未发送草稿：收起/切换后保留（T3）
+    private var aiAnchor: Rect? = null // 悬浮窗卡片矩形快照：AI 输入框/面板原位锚定（a5，收窗前抓取）
+    private var aiNoteAttached = false // ＋菜单"插入当前笔记"：随下一条问题携带正文（T4）
 
     @Volatile private var aiFabVisible = true
     @Volatile private var aiFabAlphaVal = SettingsRepository.DEFAULT_AI_ORB_ALPHA
@@ -597,6 +600,7 @@ class FloatingNoteService : Service() {
                 return@launch
             }
             aiCfg = cfg
+            aiAnchor = windowView?.cardRectPx() // 先抓位置再收窗：AI 界面接住悬浮窗的位置（a5）
             if (windowView != null) collapseWindow() // 悬浮窗变输入框：窗口收为竖条，AI 界面接管（a4）
             if (aiMessages.isEmpty()) {
                 val noteReady = aiNoteContext()?.content?.isNotBlank() == true
@@ -623,12 +627,25 @@ class FloatingNoteService : Service() {
         detachAiUi()
         aiUiState = AiUiState.ASK
         aiAsk = AiAskView(this).apply {
-            onSend = { aiSubmit(it) }
+            onSend = { aiSubmitFromAsk(it) }
             onChip = { aiChip(it) }
             onOutside = { closeAiUi() }
+            onAttachNote = {
+                aiNoteAttached = true
+                setNoteAttached(true)
+            }
+            onDetachNote = {
+                aiNoteAttached = false
+                setNoteAttached(false)
+            }
             setNoteChipsEnabled(noteChipsEnabled)
-            attach(getSystemService(WINDOW_SERVICE) as WindowManager, wmHelper.screenWidth, wmHelper.screenHeight)
+            attach(
+                getSystemService(WINDOW_SERVICE) as WindowManager,
+                wmHelper.screenWidth, wmHelper.screenHeight,
+                aiAnchor,
+            )
             if (aiDraft.isNotEmpty()) inputField.setText(aiDraft) // 草稿回填（T3）
+            if (aiNoteAttached) setNoteAttached(true) // 会话中途切回输入框态保持附件
         }
     }
 
@@ -636,14 +653,16 @@ class FloatingNoteService : Service() {
         detachAiUi()
         aiUiState = AiUiState.PANEL
         aiPanel = AiPanelView(this).apply {
-            onSend = { aiSubmit(it) }
+            onSend = { aiSubmitFromAsk(it) }
             onClose = { closeAiUi() }
             onRetry = { aiRetry(it) }
             onNewSession = { aiNewSession() }
+            onSaveNote = { saveAiAnswerAsNote(it) }
             attach(
                 getSystemService(WINDOW_SERVICE) as WindowManager,
                 wmHelper.screenWidth, wmHelper.screenHeight,
                 growFromInput,
+                aiAnchor,
             )
             renderAll(aiMessages.toList())
             setSendEnabled(!aiGenerating)
@@ -664,23 +683,37 @@ class FloatingNoteService : Service() {
         aiUiState = AiUiState.NONE
     }
 
-    /** ＋ 新建会话：终止生成、清空会话，回到输入框态（a4 用户反馈）。 */
+    /** ＋ 新建会话：终止生成、清空会话，回到输入框态（a4 用户反馈）；附件随之重置。 */
     private fun aiNewSession() {
         aiGenJob?.cancel()
         aiGenJob = null
         aiGenerating = false
         aiMessages.clear()
+        aiNoteAttached = false
         scope.launch {
             val noteReady = aiNoteContext()?.content?.isNotBlank() == true
             showAiAsk(noteReady)
         }
     }
 
-    private fun aiSubmit(raw: String) {
+    /** 输入框/追问发送：附件开着时取当前笔记正文随问题携带（T4）。 */
+    private fun aiSubmitFromAsk(text: String) {
+        if (!aiNoteAttached) {
+            aiSubmit(text)
+            return
+        }
+        scope.launch {
+            val ctx = aiNoteContext()?.content.orEmpty()
+            aiNoteAttached = false // 一次提问一次携带；追问靠历史里已注入的上下文
+            aiSubmit(text, ctx)
+        }
+    }
+
+    private fun aiSubmit(raw: String, context: String = "") {
         val text = raw.trim()
         if (text.isEmpty() || aiGenerating) return
         aiDraft = "" // 已发送不再是草稿
-        aiMessages += ChatMessage(++aiSeq, ChatMessage.Role.USER, text)
+        aiMessages += ChatMessage(++aiSeq, ChatMessage.Role.USER, text, context = context)
         if (aiUiState != AiUiState.PANEL) {
             showAiPanel(growFromInput = true) // 输入框原位向上生长成面板（T3）
         } else {
@@ -710,6 +743,18 @@ class FloatingNoteService : Service() {
         aiSubmit("$instruction\n\n${note.content}")
     }
 
+    /** 回答存为笔记（T4）：独立成篇（标题取回答首行），不劫持悬浮窗当前绑定。 */
+    private fun saveAiAnswerAsNote(id: Long) {
+        val msg = aiMessages.firstOrNull { it.id == id } ?: return
+        if (msg.role != ChatMessage.Role.ASSISTANT || msg.text.isBlank()) return
+        if (msg.state == ChatMessage.State.STREAMING) return
+        val title = msg.text.lineSequence().firstOrNull { it.isNotBlank() }?.take(16).orEmpty()
+        scope.launch {
+            app.noteRepository.createNote(title = title, content = msg.text)
+            aiPanel?.markNoteSaved(id)
+        }
+    }
+
     private fun startAiGeneration() {
         val cfg = aiCfg ?: return
         if (aiGenerating) return
@@ -721,7 +766,15 @@ class FloatingNoteService : Service() {
         val history = aiMessages
             .filter { it.state != ChatMessage.State.FAILED && it.text.isNotBlank() }
             .takeLast(20)
-            .map { RequestMessage(if (it.role == ChatMessage.Role.USER) "user" else "assistant", it.text) }
+            .map {
+                // 附带的笔记正文只进请求不进气泡（T4）
+                val content = if (it.context.isNotBlank()) {
+                    "参考以下笔记内容回答：\n${it.context}\n---\n问题：${it.text}"
+                } else {
+                    it.text
+                }
+                RequestMessage(if (it.role == ChatMessage.Role.USER) "user" else "assistant", content)
+            }
         aiGenJob = scope.launch {
             val idx = aiMessages.indexOf(reply)
             val buf = StringBuilder()
@@ -729,10 +782,13 @@ class FloatingNoteService : Service() {
             var errorMsg: String? = null
             var flushPending = false
             fun pushText() {
-                if (idx in aiMessages.indices) {
-                    aiMessages[idx] = reply.copy(text = buf.toString())
-                    aiPanel?.updateMessage(aiMessages[idx])
-                }
+                if (idx !in aiMessages.indices) return
+                val cur = aiMessages[idx]
+                // 终态（DONE/FAILED）后迟到的合帧不再回写：copy 会把消息倒退回 STREAMING，
+                // 重建气泡时抹掉"存为笔记"按钮（T4 真机踩坑）
+                if (cur.state != ChatMessage.State.STREAMING) return
+                aiMessages[idx] = cur.copy(text = buf.toString())
+                aiPanel?.updateMessage(aiMessages[idx])
             }
             try {
                 aiClient.streamReply(cfg, cfg.chatModel, history).collect { ev ->

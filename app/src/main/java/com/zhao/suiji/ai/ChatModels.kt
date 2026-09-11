@@ -11,6 +11,8 @@ data class ChatMessage(
     val role: Role,
     val text: String,
     val state: State = State.DONE,
+    /** 随问题携带的笔记正文（＋菜单"插入当前笔记"）：只进请求不进气泡（T4）。 */
+    val context: String = "",
 ) {
     enum class Role { USER, ASSISTANT }
 

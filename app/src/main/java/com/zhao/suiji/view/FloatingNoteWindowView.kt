@@ -217,6 +217,14 @@ class FloatingNoteWindowView(context: Context) : FrameLayout(context) {
         }
     }
 
+    /** 窗口卡片（不含长条）在屏幕上的矩形：AI 输入框/面板锚定用（a5 位置跟随）；未挂载返回 null。 */
+    fun cardRectPx(): Rect? {
+        val p = params ?: return null
+        val barW = barWidthPx()
+        val left = if (side.isRight) p.x else p.x + barW
+        return Rect(left, p.y, left + (p.width - barW), p.y + p.height)
+    }
+
     /** 应用侧别（无动画，展开接线用）：镜像布局 + 工具栏按侧重排。 */
     fun setSide(side: Side) {
         this.side = side
