@@ -27,7 +27,6 @@ import com.zhao.suiji.manager.WindowManagerHelper
 import com.zhao.suiji.text.NoteTextUtils
 import com.zhao.suiji.util.ScreenUtils
 import com.zhao.suiji.view.AiAskView
-import com.zhao.suiji.view.AiOrbView
 import com.zhao.suiji.view.AiPanelView
 import com.zhao.suiji.view.FloatingBallView
 import com.zhao.suiji.view.FloatingNoteWindowView
@@ -128,8 +127,6 @@ class FloatingNoteService : Service() {
             windowView = null
             ballView?.detach()
             ballView = null
-            aiOrb?.detach()
-            aiOrb = null
             detachAiUi()
             aiUiState = AiUiState.NONE
             stopSelf()
@@ -150,8 +147,6 @@ class FloatingNoteService : Service() {
         ballView?.detach()
         ballView = null
         aiGenJob?.cancel()
-        aiOrb?.detach()
-        aiOrb = null
         detachAiUi()
         aiUiState = AiUiState.NONE
         super.onDestroy()
@@ -342,6 +337,9 @@ class FloatingNoteService : Service() {
                 ToolbarAction.visibleActions(s.toolbarButtons),
                 s.toolbarPosition, s.toolbarScale, s.toolbarOpacity,
             )
+            // AI 入口（v2.1-a4）：卡片左下角按钮，点击后窗口变输入框
+            win.applyAiButton(aiFabVisible, aiFabAlphaVal)
+            win.onAiFabClick = { onAiFabTap() }
 
             // 展开形变（v2.0 三期）：窗口从竖条几何长成目标尺寸；竖条是唯一展开入口，
             // stickCenterYPx 一定有效（无竖条时直接显示，不做形变）
@@ -553,11 +551,10 @@ class FloatingNoteService : Service() {
         }
     }
 
-    // ---- AI 助手（v2.1 三态：左下圆钮 → 极简输入框 → 展开面板，独立于笔记窗）----
+    // ---- AI 助手（v2.1-a4：入口改为悬浮窗左下角按钮，点击后窗口变输入框）----
 
     private enum class AiUiState { NONE, ASK, PANEL }
 
-    private var aiOrb: AiOrbView? = null
     private var aiAsk: AiAskView? = null
     private var aiPanel: AiPanelView? = null
     private var aiUiState = AiUiState.NONE
@@ -570,38 +567,22 @@ class FloatingNoteService : Service() {
     private var aiCfg: AiConfig? = null
     private var aiDraft = "" // 输入框未发送草稿：收起/切换后保留（T3）
 
-    @Volatile private var aiEnabled = true
-    @Volatile private var aiOrbAlphaVal = SettingsRepository.DEFAULT_AI_ORB_ALPHA
+    @Volatile private var aiFabVisible = true
+    @Volatile private var aiFabAlphaVal = SettingsRepository.DEFAULT_AI_ORB_ALPHA
 
-    /** 订阅 AI 开关与圆钮透明度：开关实时挂/摘圆钮。 */
+    /** 订阅 AI 开关与按钮透明度：应用到当前悬浮窗（窗口每次展开都重应用）。 */
     private fun observeAiSettings() {
         scope.launch {
             combine(settings.aiAssistantEnabled, settings.aiOrbAlpha) { e, a -> e to a }.collect { (e, a) ->
-                aiEnabled = e
-                aiOrbAlphaVal = a
-                if (e) {
-                    if (aiOrb == null) attachAiOrb() else aiOrb?.applyAlpha(a)
-                } else {
-                    aiOrb?.detach()
-                    aiOrb = null
-                    if (aiUiState != AiUiState.NONE) closeAiUi()
-                }
+                aiFabVisible = e
+                aiFabAlphaVal = a
+                windowView?.applyAiButton(e, a)
+                if (!e && aiUiState != AiUiState.NONE) closeAiUi()
             }
         }
     }
 
-    private fun attachAiOrb() {
-        if (!ensureOverlayPermissionAlive()) return
-        aiOrb?.detach()
-        aiOrb = AiOrbView(this).apply {
-            applyAlpha(aiOrbAlphaVal)
-            setGenerating(aiGenerating)
-            onActivate = { onAiOrbTap() }
-            attach(getSystemService(WINDOW_SERVICE) as WindowManager, wmHelper.screenWidth, wmHelper.screenHeight)
-        }
-    }
-
-    private fun onAiOrbTap() {
+    private fun onAiFabTap() {
         scope.launch {
             val cfg = loadAiConfig()
             if (!cfg.isConfigured) {
@@ -616,7 +597,7 @@ class FloatingNoteService : Service() {
                 return@launch
             }
             aiCfg = cfg
-            if (windowView != null) collapseWindow() // 笔记窗自动收起为竖条（PRD v2）
+            if (windowView != null) collapseWindow() // 悬浮窗变输入框：窗口收为竖条，AI 界面接管（a4）
             if (aiMessages.isEmpty()) {
                 val noteReady = aiNoteContext()?.content?.isNotBlank() == true
                 showAiAsk(noteReady)
@@ -640,8 +621,6 @@ class FloatingNoteService : Service() {
 
     private fun showAiAsk(noteChipsEnabled: Boolean) {
         detachAiUi()
-        aiOrb?.detach() // 圆钮与输入框/面板互斥：打开即隐，收起才回
-        aiOrb = null
         aiUiState = AiUiState.ASK
         aiAsk = AiAskView(this).apply {
             onSend = { aiSubmit(it) }
@@ -655,13 +634,12 @@ class FloatingNoteService : Service() {
 
     private fun showAiPanel(growFromInput: Boolean) {
         detachAiUi()
-        aiOrb?.detach()
-        aiOrb = null
         aiUiState = AiUiState.PANEL
         aiPanel = AiPanelView(this).apply {
             onSend = { aiSubmit(it) }
             onClose = { closeAiUi() }
             onRetry = { aiRetry(it) }
+            onNewSession = { aiNewSession() }
             attach(
                 getSystemService(WINDOW_SERVICE) as WindowManager,
                 wmHelper.screenWidth, wmHelper.screenHeight,
@@ -679,12 +657,23 @@ class FloatingNoteService : Service() {
         aiPanel = null
     }
 
-    /** 面板 ✕ / 点输入框外 / 开关关闭：回圆钮。生成不中断，圆钮呼吸点接力；草稿保留。 */
+    /** 面板 ✕ / 点输入框外 / 开关关闭：收起（竖条在场即入口回位）。草稿保留。 */
     private fun closeAiUi() {
         aiAsk?.let { aiDraft = it.inputField.text?.toString().orEmpty() }
         detachAiUi()
         aiUiState = AiUiState.NONE
-        if (aiEnabled) attachAiOrb()
+    }
+
+    /** ＋ 新建会话：终止生成、清空会话，回到输入框态（a4 用户反馈）。 */
+    private fun aiNewSession() {
+        aiGenJob?.cancel()
+        aiGenJob = null
+        aiGenerating = false
+        aiMessages.clear()
+        scope.launch {
+            val noteReady = aiNoteContext()?.content?.isNotBlank() == true
+            showAiAsk(noteReady)
+        }
     }
 
     private fun aiSubmit(raw: String) {
@@ -729,7 +718,6 @@ class FloatingNoteService : Service() {
         aiPanel?.addMessage(reply)
         aiGenerating = true
         aiPanel?.setSendEnabled(false)
-        aiOrb?.setGenerating(true)
         val history = aiMessages
             .filter { it.state != ChatMessage.State.FAILED && it.text.isNotBlank() }
             .takeLast(20)
@@ -780,7 +768,6 @@ class FloatingNoteService : Service() {
             aiPanel?.updateMessage(final)
             aiGenerating = false
             aiPanel?.setSendEnabled(true)
-            aiOrb?.setGenerating(false)
         }
     }
 

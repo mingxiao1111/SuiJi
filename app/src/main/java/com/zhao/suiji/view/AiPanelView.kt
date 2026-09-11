@@ -51,6 +51,8 @@ class AiPanelView(context: Context) : FrameLayout(context) {
     var onSend: ((String) -> Unit)? = null
     var onClose: (() -> Unit)? = null
     var onRetry: ((Long) -> Unit)? = null
+    var onNewSession: (() -> Unit)? = null
+    private var typingAnim: android.animation.ValueAnimator? = null
 
     init {
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
@@ -61,9 +63,25 @@ class AiPanelView(context: Context) : FrameLayout(context) {
             elevation = dp(10).toFloat()
         }
 
-        // 头部：右上 ✕
+        // 头部右上：＋ 新建会话（左）与 ✕ 关闭（右）
         val header = FrameLayout(context)
-        header.addView(
+        val actions = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        actions.addView(
+            FrameLayout(context).apply {
+                background = AiStyle.roundBg(if (night) 0x1FEBEBF5 else 0x14787880, 999f, density)
+                addView(ImageView(context).apply {
+                    setImageResource(R.drawable.ic_ai_plus)
+                    setColorFilter(AiStyle.textSecondary(night))
+                    layoutParams = LayoutParams(dp(11), dp(11), Gravity.CENTER)
+                })
+                setOnClickListener { onNewSession?.invoke() }
+            },
+            LinearLayout.LayoutParams(dp(26), dp(26)).apply { marginEnd = dp(8) },
+        )
+        actions.addView(
             FrameLayout(context).apply {
                 background = AiStyle.roundBg(if (night) 0x1FEBEBF5 else 0x14787880, 999f, density)
                 addView(ImageView(context).apply {
@@ -73,7 +91,11 @@ class AiPanelView(context: Context) : FrameLayout(context) {
                 })
                 setOnClickListener { onClose?.invoke() }
             },
-            LayoutParams(dp(26), dp(26), Gravity.END or Gravity.CENTER_VERTICAL),
+            LinearLayout.LayoutParams(dp(26), dp(26)),
+        )
+        header.addView(
+            actions,
+            LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT, Gravity.END or Gravity.CENTER_VERTICAL),
         )
         card.addView(header, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(36)))
 
@@ -168,6 +190,8 @@ class AiPanelView(context: Context) : FrameLayout(context) {
 
     fun detach() {
         handler.removeCallbacksAndMessages(null)
+        typingAnim?.cancel()
+        typingAnim = null
         runCatching {
             context.getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(windowToken, 0)
         }
@@ -183,6 +207,8 @@ class AiPanelView(context: Context) : FrameLayout(context) {
 
     /** 重开会话时全量重绘。 */
     fun renderAll(messages: List<ChatMessage>) {
+        typingAnim?.cancel()
+        typingAnim = null
         bubbles.clear()
         chatList.removeAllViews()
         messages.forEach { appendMessage(it) }
@@ -219,7 +245,8 @@ class AiPanelView(context: Context) : FrameLayout(context) {
         when {
             msg.role == ChatMessage.Role.USER -> container.addView(userBubble(msg.text))
             msg.state == ChatMessage.State.FAILED -> container.addView(errorBubble(msg.id, msg.text))
-            else -> container.addView(aiText(msg.text, msg.state == ChatMessage.State.STREAMING))
+            msg.text.isBlank() -> container.addView(typingDots()) // 等待首 token：三点动画
+            else -> container.addView(aiText(msg.text))
         }
         bubbles[msg.id] = container
         chatList.addView(
@@ -239,13 +266,45 @@ class AiPanelView(context: Context) : FrameLayout(context) {
         ellipsize = null
     }
 
-    private fun aiText(text: String, streaming: Boolean): TextView = TextView(context).apply {
-        this.text = if (streaming) "$text$CARET" else text  // 流式尾部光标
+    private fun aiText(text: String): TextView = TextView(context).apply {
+        this.text = text
         textSize = 14f
         setTextColor(AiStyle.textPrimary(night))
         setLineSpacing(dp(3).toFloat(), 1f)
         maxWidth = maxBubbleWidthPx + dp(30)
         setTextIsSelectable(true)
+    }
+
+    /** 等待动画：三个呼吸点（主流 AI 软件语言，a4 用户反馈替代旧版黑色光标条）。 */
+    private fun typingDots(): LinearLayout = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        val dotColor = AiStyle.textHint(night)
+        val dots = (0..2).map { index ->
+            android.view.View(context).apply {
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(dotColor)
+                }
+                layoutParams = LinearLayout.LayoutParams(dp(6), dp(6)).apply {
+                    marginEnd = dp(4)
+                    topMargin = dp(3)
+                    bottomMargin = dp(3)
+                }
+            }.also { addView(it) }
+        }
+        typingAnim?.cancel()
+        typingAnim = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 1000L
+            repeatCount = android.animation.ValueAnimator.INFINITE
+            addUpdateListener { anim ->
+                val t = anim.animatedValue as Float
+                dots.forEachIndexed { i, dot ->
+                    val phase = ((t * 3f + i) % 3f) / 3f
+                    dot.alpha = 0.25f + 0.75f * (if (phase < 0.5f) phase * 2 else (1f - phase) * 2)
+                }
+            }
+            start()
+        }
     }
 
     private fun errorBubble(id: Long, detail: String): LinearLayout = LinearLayout(context).apply {
@@ -317,6 +376,5 @@ class AiPanelView(context: Context) : FrameLayout(context) {
         private const val MAX_WIDTH_DP = 480
         private const val MIN_HEIGHT_DP = 320
         private const val MAX_HEIGHT_DP = 620
-        private const val CARET = "▏" // 流式尾光标
     }
 }

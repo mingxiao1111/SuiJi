@@ -419,7 +419,7 @@ class SettingsRepository(private val context: Context) {
         const val DEFAULT_WINDOW_HEIGHT = 210
         const val DEFAULT_COLLAPSE_DELAY_MS = 30_000L
         const val DEFAULT_FONT_SIZE_SP = 15
-        const val DEFAULT_AI_ORB_ALPHA = 0.35f // 圆钮背景不透明度（图标不受影响）
+        const val DEFAULT_AI_ORB_ALPHA = 0.22f // AI 按钮底色不透明度（a4 用户拍板：更低调；图标不受影响）
 
         // FRADE_ON_EDGE_KEY 名字打错了，但作为存储 key 一旦发布不可再改；此处保持一致
         private val FADE_ON_EDGE = FRADE_ON_EDGE_KEY

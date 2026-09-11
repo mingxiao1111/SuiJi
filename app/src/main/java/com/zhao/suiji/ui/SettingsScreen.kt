@@ -610,7 +610,7 @@ private fun AiSection(
     val aiEnabled by repo.aiAssistantEnabled.collectAsStateWithLifecycle(initialValue = true)
     val aiOrbAlpha by repo.aiOrbAlpha.collectAsStateWithLifecycle(initialValue = SettingsRepository.DEFAULT_AI_ORB_ALPHA)
 
-    SwitchRow("悬浮 AI 按钮（左下角）", aiEnabled) {
+    SwitchRow("悬浮窗 AI 按钮（卡片左下角）", aiEnabled) {
         scope.launch { repo.setAiAssistantEnabled(it) }
     }
     SliderRow(

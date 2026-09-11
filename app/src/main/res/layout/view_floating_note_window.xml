@@ -103,6 +103,26 @@
                 </HorizontalScrollView>
             </LinearLayout>
         </LinearLayout>
+
+        <!-- AI 入口（v2.1-a4 用户拍板）：卡片左下角半透明圆钮，与右下缩放手柄对角相对；
+             随侧别镜像；显示与透明度由代码驱动 -->
+        <FrameLayout
+            android:id="@+id/aiFab"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:layout_gravity="bottom|start"
+            android:layout_marginStart="10dp"
+            android:layout_marginBottom="10dp"
+            android:visibility="gone"
+            android:importantForAccessibility="no">
+
+            <ImageView
+                android:layout_width="17dp"
+                android:layout_height="17dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_ai_atom"
+                android:importantForAccessibility="no" />
+        </FrameLayout>
     </FrameLayout>
 
     <!-- 缩放手柄（三斜线 grip；v2.0-a5 去背景圆片+低透明度，弱化为"低调提示"不抢视觉） -->

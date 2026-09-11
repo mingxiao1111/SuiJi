@@ -109,6 +109,10 @@ class FloatingNoteWindowView(context: Context) : FrameLayout(context) {
     private val dividerBottom: View
     private val collapseBar: FloatingBarView
     private val resizeHandle: ImageView
+    private val aiFab: FrameLayout
+
+    /** AI 入口点击（v2.1-a4：卡片左下角，与缩放手柄对角）。 */
+    var onAiFabClick: (() -> Unit)? = null
 
     private val imm get() = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
     private val hitRect = Rect()
@@ -135,6 +139,8 @@ class FloatingNoteWindowView(context: Context) : FrameLayout(context) {
         dividerBottom = findViewById(R.id.dividerBottom)
         collapseBar = findViewById(R.id.barView)
         resizeHandle = findViewById(R.id.resizeHandle)
+        aiFab = findViewById(R.id.aiFab)
+        aiFab.setOnClickListener { onAiFabClick?.invoke() }
 
         setupEditor()
         setupBar()
@@ -183,6 +189,31 @@ class FloatingNoteWindowView(context: Context) : FrameLayout(context) {
             lp.marginStart = if (side.isRight) ScreenUtils.dpToPx(context, 8) else 0
             lp.marginEnd = if (side.isRight) 0 else ScreenUtils.dpToPx(context, 8)
             resizeHandle.layoutParams = lp
+        }
+        // AI 入口与缩放手柄保持对角（v2.1-a4）
+        (aiFab.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
+            lp.gravity = if (side.isRight) Gravity.BOTTOM or Gravity.END else Gravity.BOTTOM or Gravity.START
+            lp.marginStart = if (side.isRight) 0 else ScreenUtils.dpToPx(context, 10)
+            lp.marginEnd = if (side.isRight) ScreenUtils.dpToPx(context, 10) else 0
+            aiFab.layoutParams = lp
+        }
+    }
+
+    /** AI 入口按钮（v2.1-a4）：半透明圆底 + 原子图标；[alpha] 为底色不透明度。
+     *  底浅时白图标会淹没在白卡里，图标色随底色深浅自适应（a4 复验：0.22 档白图标不可见）。 */
+    fun applyAiButton(show: Boolean, alpha: Float) {
+        aiFab.visibility = if (show) VISIBLE else GONE
+        if (show) {
+            val a = alpha.coerceIn(0.1f, 0.9f)
+            aiFab.background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(android.graphics.Color.argb((a * 255).toInt(), 0x1C, 0x1C, 0x1E))
+            }
+            aiFab.elevation = ScreenUtils.dpToPx(context, 3).toFloat()
+            // 交叉点约 0.55：底色亮度低于此时白图标反超深图标
+            val iconColor = if (a < 0.55f) 0xFF3C3C3E.toInt() else android.graphics.Color.WHITE
+            (aiFab.getChildAt(0) as? android.widget.ImageView)?.imageTintList =
+                android.content.res.ColorStateList.valueOf(iconColor)
         }
     }
 
@@ -553,6 +584,7 @@ class FloatingNoteWindowView(context: Context) : FrameLayout(context) {
                 // （v2.0-a4 修：此前工具栏未排除，未聚焦时第一击只弹键盘不触发按钮）
                 keyboardFirst = !deleted && !editor.hasFocus() &&
                     !inChild(collapseBar, ev.x, ev.y) && !inChild(resizeHandle, ev.x, ev.y) &&
+                    !inChild(aiFab, ev.x, ev.y) &&
                     !inChild(toolbarTopContainer, ev.x, ev.y) &&
                     !inChild(toolbarBottomContainer, ev.x, ev.y)
                 return keyboardFirst
