@@ -10,6 +10,8 @@ import android.os.Build
 import android.os.IBinder
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
+import com.zhao.suiji.AiImageBus
+import com.zhao.suiji.AiImagePickerActivity
 import com.zhao.suiji.FloatNoteApp
 import com.zhao.suiji.MainActivity
 import com.zhao.suiji.R
@@ -569,6 +571,7 @@ class FloatingNoteService : Service() {
     private var aiDraft = "" // 输入框未发送草稿：收起/切换后保留（T3）
     private var aiAnchor: Rect? = null // 悬浮窗卡片矩形快照：AI 输入框/面板原位锚定（a5，收窗前抓取）
     private var aiNoteAttached = false // ＋菜单"插入当前笔记"：随下一条问题携带正文（T4）
+    private var aiPendingImagePath: String? = null // ＋菜单"插入图片"压缩后的 cache 路径（T5）
 
     @Volatile private var aiFabVisible = true
     @Volatile private var aiFabAlphaVal = SettingsRepository.DEFAULT_AI_ORB_ALPHA
@@ -638,6 +641,11 @@ class FloatingNoteService : Service() {
                 aiNoteAttached = false
                 setNoteAttached(false)
             }
+            onPickImage = { aiPickImage() }
+            onRemoveImage = {
+                aiPendingImagePath = null
+                setImageAttached(null)
+            }
             setNoteChipsEnabled(noteChipsEnabled)
             attach(
                 getSystemService(WINDOW_SERVICE) as WindowManager,
@@ -646,6 +654,7 @@ class FloatingNoteService : Service() {
             )
             if (aiDraft.isNotEmpty()) inputField.setText(aiDraft) // 草稿回填（T3）
             if (aiNoteAttached) setNoteAttached(true) // 会话中途切回输入框态保持附件
+            aiPendingImagePath?.let { setImageAttached(it) } // 待发图片同理（T5）
         }
     }
 
@@ -696,24 +705,58 @@ class FloatingNoteService : Service() {
         }
     }
 
+    /** ＋菜单"插入图片"（T5）：未配视觉模型引导配置（用户拍板"后者"），否则拉起选图中转。
+     *  选图期间收起输入框——overlay 悬在系统相册上方会挡住网格首行（真机踩坑），
+     *  选完/取消经 [AiImageBus] 回来后带 chip 重开（草稿/附件由 closeAiUi 保留）。 */
+    private fun aiPickImage() {
+        val visionBlank = aiCfg == null || aiCfg!!.visionModel.isBlank()
+        if (visionBlank) {
+            runCatching {
+                startActivity(
+                    Intent(this@FloatingNoteService, SettingsActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        .putExtra("focus_ai", true),
+                )
+            }
+            return
+        }
+        AiImageBus.listener = { path ->
+            aiPendingImagePath = path
+            scope.launch {
+                val noteReady = aiNoteContext()?.content?.isNotBlank() == true
+                showAiAsk(noteReady)
+            }
+        }
+        closeAiUi()
+        runCatching {
+            startActivity(
+                Intent(this@FloatingNoteService, AiImagePickerActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
+    }
+
     /** 输入框/追问发送：附件开着时取当前笔记正文随问题携带（T4）。 */
     private fun aiSubmitFromAsk(text: String) {
-        if (!aiNoteAttached) {
+        if (!aiNoteAttached && aiPendingImagePath == null) {
             aiSubmit(text)
             return
         }
         scope.launch {
-            val ctx = aiNoteContext()?.content.orEmpty()
+            val ctx = if (aiNoteAttached) aiNoteContext()?.content.orEmpty() else ""
+            val img = aiPendingImagePath
             aiNoteAttached = false // 一次提问一次携带；追问靠历史里已注入的上下文
-            aiSubmit(text, ctx)
+            aiPendingImagePath = null
+            aiSubmit(text, ctx, img)
         }
     }
 
-    private fun aiSubmit(raw: String, context: String = "") {
+    private fun aiSubmit(raw: String, context: String = "", imagePath: String? = null) {
         val text = raw.trim()
-        if (text.isEmpty() || aiGenerating) return
+        if (text.isEmpty() && imagePath == null) return
+        if (aiGenerating) return
         aiDraft = "" // 已发送不再是草稿
-        aiMessages += ChatMessage(++aiSeq, ChatMessage.Role.USER, text, context = context)
+        aiMessages += ChatMessage(++aiSeq, ChatMessage.Role.USER, text, context = context, imagePath = imagePath)
         if (aiUiState != AiUiState.PANEL) {
             showAiPanel(growFromInput = true) // 输入框原位向上生长成面板（T3）
         } else {
@@ -743,6 +786,12 @@ class FloatingNoteService : Service() {
         aiSubmit("$instruction\n\n${note.content}")
     }
 
+    /** 压缩图转 base64 data URL（T5）。 */
+    private fun fileToDataUrl(path: String): String? = runCatching {
+        val bytes = java.io.File(path).readBytes()
+        "data:image/jpeg;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+    }.getOrNull()
+
     /** 回答存为笔记（T4）：独立成篇（标题取回答首行），不劫持悬浮窗当前绑定。 */
     private fun saveAiAnswerAsNote(id: Long) {
         val msg = aiMessages.firstOrNull { it.id == id } ?: return
@@ -764,16 +813,18 @@ class FloatingNoteService : Service() {
         aiGenerating = true
         aiPanel?.setSendEnabled(false)
         val history = aiMessages
-            .filter { it.state != ChatMessage.State.FAILED && it.text.isNotBlank() }
+            .filter { it.state != ChatMessage.State.FAILED && (it.text.isNotBlank() || !it.imagePath.isNullOrBlank()) }
             .takeLast(20)
             .map {
-                // 附带的笔记正文只进请求不进气泡（T4）
-                val content = if (it.context.isNotBlank()) {
+                // 附带的笔记正文只进请求不进气泡（T4）；带图消息转 OpenAI 图文数组（T5）
+                val role = if (it.role == ChatMessage.Role.USER) "user" else "assistant"
+                val text = if (it.context.isNotBlank()) {
                     "参考以下笔记内容回答：\n${it.context}\n---\n问题：${it.text}"
                 } else {
                     it.text
                 }
-                RequestMessage(if (it.role == ChatMessage.Role.USER) "user" else "assistant", content)
+                val dataUrl = it.imagePath?.let(::fileToDataUrl)
+                if (dataUrl != null) RequestMessage.withImage(role, text, dataUrl) else RequestMessage.text(role, text)
             }
         aiGenJob = scope.launch {
             val idx = aiMessages.indexOf(reply)
@@ -791,7 +842,13 @@ class FloatingNoteService : Service() {
                 aiPanel?.updateMessage(aiMessages[idx])
             }
             try {
-                aiClient.streamReply(cfg, cfg.chatModel, history).collect { ev ->
+                // 视觉路由（T5）：会话里有图就切视觉模型（未配兜底普通模型，正常入口不会走到）
+                val model = if (aiMessages.any { !it.imagePath.isNullOrBlank() }) {
+                    cfg.visionModel.ifBlank { cfg.chatModel }
+                } else {
+                    cfg.chatModel
+                }
+                aiClient.streamReply(cfg, model, history).collect { ev ->
                     when (ev) {
                         is ChatEvent.Delta -> {
                             received = true

@@ -272,7 +272,10 @@ class AiPanelView(context: Context) : FrameLayout(context) {
             gravity = if (msg.role == ChatMessage.Role.USER) Gravity.END else Gravity.START
         }
         when {
-            msg.role == ChatMessage.Role.USER -> container.addView(userBubble(msg.text))
+            msg.role == ChatMessage.Role.USER -> {
+                msg.imagePath?.let { path -> imageThumb(path)?.let(container::addView) } // 图片气泡（T5）
+                if (msg.text.isNotBlank()) container.addView(userBubble(msg.text))
+            }
             msg.state == ChatMessage.State.FAILED -> container.addView(errorBubble(msg.id, msg.text))
             msg.text.isBlank() -> container.addView(typingDots()) // 等待首 token：三点动画
             else -> {
@@ -296,6 +299,33 @@ class AiPanelView(context: Context) : FrameLayout(context) {
         setPadding(dp(13), dp(9), dp(13), dp(9))
         maxWidth = maxBubbleWidthPx
         ellipsize = null
+    }
+
+    /** 用户消息携带的图片（T5）：圆角缩略图。显式像素尺寸——adjustViewBounds+maxWidth
+     *  在 ScrollView 链路里实测量出 0 尺寸（真机踩坑），不参与测量博弈。 */
+    private fun imageThumb(path: String): ImageView? {
+        val opts = android.graphics.BitmapFactory.Options()
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(path, bounds)
+        var sample = 1
+        if (bounds.outWidth > 0) {
+            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 1440) sample *= 2
+            opts.inSampleSize = sample
+        }
+        val bmp = android.graphics.BitmapFactory.decodeFile(path, opts) ?: return null
+        val maxSide = (maxBubbleWidthPx * 0.62f).toInt()
+        val ratio = bmp.width.toFloat() / bmp.height.toFloat()
+        val w = if (ratio >= 1f) maxSide else (maxSide * ratio).toInt()
+        val h = if (ratio >= 1f) (maxSide / ratio).toInt() else maxSide
+        return ImageView(context).apply {
+            setImageDrawable(
+                androidx.core.graphics.drawable.RoundedBitmapDrawableFactory.create(resources, bmp)
+                    .apply { cornerRadius = dp(12).toFloat() },
+            )
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            layoutParams = LinearLayout.LayoutParams(w, h)
+                .apply { bottomMargin = dp(4) }
+        }
     }
 
     private fun aiText(text: String): TextView = TextView(context).apply {

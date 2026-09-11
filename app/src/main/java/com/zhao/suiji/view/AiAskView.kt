@@ -45,12 +45,16 @@ class AiAskView(context: Context) : FrameLayout(context) {
     private var chipSummarize: TextView? = null
     private var menuRow: LinearLayout? = null
     private var attachRow: TextView? = null
+    private var imageRow: LinearLayout? = null
+    private var imageThumb: ImageView? = null
 
     var onSend: ((String) -> Unit)? = null
     var onChip: ((String) -> Unit)? = null
     var onOutside: (() -> Unit)? = null
     var onAttachNote: (() -> Unit)? = null
     var onDetachNote: (() -> Unit)? = null
+    var onPickImage: (() -> Unit)? = null
+    var onRemoveImage: (() -> Unit)? = null
 
     init {
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
@@ -84,22 +88,15 @@ class AiAskView(context: Context) : FrameLayout(context) {
         pill.addView(inputField)
         pill.addView(sendButton {})
 
-        // ＋菜单（GONE，点＋展开；T5 再加"插入图片"）
+        // ＋菜单（GONE，点＋展开）：插入当前笔记（T4）/ 插入图片（T5）
         menuRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             visibility = GONE
+            addView(menuChip("插入当前笔记") { if (noteAttachAvailable) onAttachNote?.invoke() })
             addView(
-                TextView(context).apply {
-                    text = "插入当前笔记"
-                    textSize = 12f
-                    setTextColor(AiStyle.textPrimary(night))
-                    background = AiStyle.roundBg(AiStyle.surface(night), 999f, density, AiStyle.stroke(night))
-                    setPadding(dp(12), dp(7), dp(12), dp(7))
-                    elevation = dp(3).toFloat()
-                    setOnClickListener {
-                        if (noteAttachAvailable) onAttachNote?.invoke()
-                    }
-                },
+                menuChip("插入图片") { onPickImage?.invoke() },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                    .apply { marginStart = dp(7) },
             )
         }
         content.addView(
@@ -120,6 +117,36 @@ class AiAskView(context: Context) : FrameLayout(context) {
         }
         content.addView(
             attachRow!!,
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { bottomMargin = dp(8) },
+        )
+
+        // 已附图片指示（缩略图 + ✕ 移除，T5）
+        imageRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = GONE
+            addView(
+                ImageView(context).apply {
+                    imageThumb = this
+                    layoutParams = LinearLayout.LayoutParams(dp(58), dp(58))
+                    background = AiStyle.roundBg(AiStyle.stroke(night), 10f, density)
+                    clipToOutline = true
+                    scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                },
+            )
+            addView(
+                TextView(context).apply {
+                    text = "✕"
+                    textSize = 14f
+                    setTextColor(AiStyle.textSecondary(night))
+                    setPadding(dp(10), dp(6), dp(10), dp(6))
+                    setOnClickListener { onRemoveImage?.invoke() }
+                },
+            )
+        }
+        content.addView(
+            imageRow!!,
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 .apply { bottomMargin = dp(8) },
         )
@@ -259,6 +286,33 @@ class AiAskView(context: Context) : FrameLayout(context) {
     fun setNoteAttached(on: Boolean) {
         attachRow?.visibility = if (on) VISIBLE else GONE
         if (on) menuRow?.visibility = GONE
+    }
+
+    /** ＋ 菜单"插入图片"选图完成（T5）：显示缩略图 chip；null = 移除。 */
+    fun setImageAttached(path: String?) {
+        if (path == null) {
+            imageRow?.visibility = GONE
+            return
+        }
+        val bmp = android.graphics.BitmapFactory.decodeFile(path)
+        if (bmp == null) {
+            imageRow?.visibility = GONE
+            return
+        }
+        imageThumb?.setImageBitmap(bmp)
+        imageRow?.visibility = VISIBLE
+        menuRow?.visibility = GONE
+    }
+
+    /** ＋ 菜单按钮样式（与建议气泡同语言，略小）。 */
+    private fun menuChip(label: String, onClick: () -> Unit): TextView = TextView(context).apply {
+        text = label
+        textSize = 12f
+        setTextColor(AiStyle.textPrimary(night))
+        background = AiStyle.roundBg(AiStyle.surface(night), 999f, density, AiStyle.stroke(night))
+        setPadding(dp(12), dp(7), dp(12), dp(7))
+        elevation = dp(3).toFloat()
+        setOnClickListener { onClick() }
     }
 
     private fun toggleMenu() {

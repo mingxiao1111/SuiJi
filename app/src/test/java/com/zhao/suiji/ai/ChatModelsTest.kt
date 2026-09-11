@@ -57,14 +57,38 @@ class ChatModelsTest {
         val req = ChatRequest(
             model = "deepseek-chat",
             messages = listOf(
-                RequestMessage("user", "你好"),
-                RequestMessage("assistant", "你好！"),
+                RequestMessage.text("user", "你好"),
+                RequestMessage.text("assistant", "你好！"),
             ),
         )
         val s = json.encodeToString(ChatRequest.serializer(), req)
         assertEquals(
             """{"model":"deepseek-chat","messages":[{"role":"user","content":"你好"},""" +
                 """{"role":"assistant","content":"你好！"}],"stream":true}""",
+            s,
+        )
+    }
+
+    // ---- 图文消息（T5）----
+
+    @Test
+    fun `带图消息序列化为 OpenAI 图文数组`() {
+        val m = RequestMessage.withImage("user", "这张图里是什么？", "data:image/jpeg;base64,QUJD")
+        val s = json.encodeToString(RequestMessage.serializer(), m)
+        assertEquals(
+            """{"role":"user","content":[{"type":"text","text":"这张图里是什么？"},""" +
+                """{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,QUJD"}}]}""",
+            s,
+        )
+    }
+
+    @Test
+    fun `纯图消息省略 text 部件`() {
+        val m = RequestMessage.withImage("user", "", "data:image/jpeg;base64,QUJD")
+        val s = json.encodeToString(RequestMessage.serializer(), m)
+        assertEquals(
+            """{"role":"user","content":[{"type":"image_url","image_url":""" +
+                """{"url":"data:image/jpeg;base64,QUJD"}}]}""",
             s,
         )
     }

@@ -36,6 +36,14 @@
             android:name=".SettingsActivity"
             android:exported="false" />
 
+        <!-- AI 选图中转（T5）：透明无界面，选完压缩入 cache 并回传 Service -->
+        <activity
+            android:name=".AiImagePickerActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- 开机自启（v1.2）：BOOT_COMPLETED 是系统保护广播，exported 接收 -->
         <receiver
             android:name=".receiver.BootCompletedReceiver"
