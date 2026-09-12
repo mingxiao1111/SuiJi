@@ -160,7 +160,7 @@ class AiAskView(context: Context) : FrameLayout(context) {
             orientation = LinearLayout.HORIZONTAL
         }
         listOf(
-            CHIP_ORGANIZE to "整理这篇",
+            CHIP_ORGANIZE to "整理这篇笔记",
             CHIP_EXPLAIN to "解释",
             CHIP_TRANSLATE to "翻译",
             CHIP_SUMMARIZE to "总结",
@@ -197,8 +197,22 @@ class AiAskView(context: Context) : FrameLayout(context) {
                 ),
             )
         }
-        content.addView(
+        // 建议气泡行：左滑区 + 最右常驻粘贴板按钮（a6-2，快速访问剪贴板）
+        val chipsRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        chipsRow.addView(
             chipsScroll,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT).apply { weight = 1f },
+        )
+        chipsRow.addView(
+            clipboardButton(),
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { marginStart = dp(7) },
+        )
+        content.addView(
+            chipsRow,
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 .apply { topMargin = dp(12) },
         )
@@ -335,6 +349,29 @@ class AiAskView(context: Context) : FrameLayout(context) {
             layoutParams = LayoutParams(dp(12), dp(12), Gravity.CENTER)
         })
         setOnClickListener { toggleMenu() }
+    }
+
+    /** 剪贴板速贴（a6-2）：chip 行最右常驻，一键把剪贴板文本填进输入框。 */
+    private fun clipboardButton(): FrameLayout = FrameLayout(context).apply {
+        layoutParams = LinearLayout.LayoutParams(dp(28), dp(28))
+        background = AiStyle.roundBg(AiStyle.surface(night), 999f, density, AiStyle.stroke(night))
+        elevation = dp(3).toFloat()
+        addView(ImageView(context).apply {
+            setImageResource(R.drawable.ic_ai_clipboard)
+            setColorFilter(AiStyle.textSecondary(night))
+            layoutParams = LayoutParams(dp(13), dp(13), Gravity.CENTER)
+        })
+        setOnClickListener { pasteFromClipboard() }
+    }
+
+    private fun pasteFromClipboard() {
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager ?: return
+        val text = cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.trim().orEmpty()
+        if (text.isNotEmpty()) {
+            inputField.setText(text)
+            inputField.setSelection(text.length)
+            inputField.requestFocus()
+        }
     }
 
     private fun sendButton(onClick: () -> Unit): FrameLayout = FrameLayout(context).apply {

@@ -52,10 +52,11 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
 
-    // AI 助手（v2.1）：网络（OkHttp）、请求 JSON、API Key 加密存储
+    // AI 助手（v2.1）：网络（OkHttp）、请求 JSON、API Key 加密存储、回答 Markdown 渲染
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.security.crypto)
+    implementation(libs.markwon.core)
 
     testImplementation(libs.junit)
 }

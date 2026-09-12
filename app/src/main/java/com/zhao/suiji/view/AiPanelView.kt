@@ -18,6 +18,9 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.zhao.suiji.R
 import com.zhao.suiji.ai.ChatMessage
+import io.noties.markwon.AbstractMarkwonPlugin
+import io.noties.markwon.Markwon
+import io.noties.markwon.core.MarkwonTheme
 import kotlin.math.min
 
 /**
@@ -36,6 +39,20 @@ class AiPanelView(context: Context) : FrameLayout(context) {
     private var baseY = 0 // 锚定态静止 y（键盘抬升基准）
     private val handler = Handler(Looper.getMainLooper())
     private val night = AiStyle.isNight(context)
+
+    /** 回答的 Markdown 渲染（a6-4）：LLM 输出普遍是 CommonMark（加粗/列表/标题/代码），
+     *  纯文本 TextView 直接显示原始符号。主题跟随 AiStyle。 */
+    private val markwon = Markwon.builder(context)
+        .usePlugin(
+            object : AbstractMarkwonPlugin() {
+                override fun configureTheme(builder: MarkwonTheme.Builder) {
+                    builder.linkColor(AiStyle.accent(night))
+                    builder.codeTextColor(AiStyle.textPrimary(night))
+                    builder.codeBackgroundColor(if (night) 0x18FFFFFF else 0x0A787880)
+                }
+            },
+        )
+        .build()
 
     private val chatList = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     private val chatScroll = ScrollView(context).apply {
@@ -329,12 +346,12 @@ class AiPanelView(context: Context) : FrameLayout(context) {
     }
 
     private fun aiText(text: String): TextView = TextView(context).apply {
-        this.text = text
         textSize = 14f
         setTextColor(AiStyle.textPrimary(night))
         setLineSpacing(dp(3).toFloat(), 1f)
         maxWidth = maxBubbleWidthPx + dp(30)
         setTextIsSelectable(true)
+        markwon.setMarkdown(this, text) // a6-4：Markdown 渲染（流式期间局部重渲，80ms 合帧足够）
     }
 
     /** 完整回答下的轻量动作（T4）：存为笔记（独立成篇，不劫持悬浮窗绑定）。 */

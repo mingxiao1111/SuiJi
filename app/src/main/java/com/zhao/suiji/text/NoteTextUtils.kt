@@ -131,4 +131,16 @@ object NoteTextUtils {
         val sel = selection.coerceIn(0, text.length)
         return text.indexOf('\n', sel).takeIf { it >= 0 } ?: text.length
     }
+
+    /** AI 回答转纯文笔记（a6-4）：面板用 Markwon 渲染 Markdown，笔记编辑器是纯文本，
+     *  存为笔记时剥掉常见 MD 记号（加粗/斜体/行内代码/围栏/标题井号/链接），保留列表与换行。 */
+    fun stripMarkdown(raw: String): String = raw
+        .replace(Regex("```[a-zA-Z0-9_-]*\\n?"), "") // 围栏（含语言标记）
+        .replace(Regex("!\\[([^\\]\\n]*)\\]\\([^)\\n]+\\)"), "$1") // 图片留替代文字（先于链接）
+        .replace(Regex("\\[([^\\]\\n]+)\\]\\([^)\\n]+\\)"), "$1") // 链接留文字
+        .replace(Regex("`([^`\\n]+)`"), "$1") // 行内代码
+        .replace(Regex("\\*\\*([^*\\n]+)\\*\\*"), "$1") // 加粗
+        .replace(Regex("__([^_\\n]+)__"), "$1")
+        .replace(Regex("(?m)^#{1,6}\\s*"), "") // 标题井号
+        .replace(Regex("\\*([^*\\n]+)\\*(?!\\*)"), "$1") // 单星斜体（列表行无闭合星不受影响；单下划线会误伤 snake_case 不剥）
 }

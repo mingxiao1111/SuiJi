@@ -792,14 +792,16 @@ class FloatingNoteService : Service() {
         "data:image/jpeg;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
     }.getOrNull()
 
-    /** 回答存为笔记（T4）：独立成篇（标题取回答首行），不劫持悬浮窗当前绑定。 */
+    /** 回答存为笔记（T4）：独立成篇（标题取回答首行），不劫持悬浮窗当前绑定。
+     *  a6-4：笔记编辑器是纯文本，剥掉 MD 记号再入库。 */
     private fun saveAiAnswerAsNote(id: Long) {
         val msg = aiMessages.firstOrNull { it.id == id } ?: return
         if (msg.role != ChatMessage.Role.ASSISTANT || msg.text.isBlank()) return
         if (msg.state == ChatMessage.State.STREAMING) return
-        val title = msg.text.lineSequence().firstOrNull { it.isNotBlank() }?.take(16).orEmpty()
+        val stripped = NoteTextUtils.stripMarkdown(msg.text)
+        val title = stripped.lineSequence().firstOrNull { it.isNotBlank() }?.take(16).orEmpty()
         scope.launch {
-            app.noteRepository.createNote(title = title, content = msg.text)
+            app.noteRepository.createNote(title = title, content = stripped)
             aiPanel?.markNoteSaved(id)
         }
     }

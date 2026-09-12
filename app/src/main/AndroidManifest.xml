@@ -36,12 +36,15 @@
             android:name=".SettingsActivity"
             android:exported="false" />
 
-        <!-- AI 选图中转（T5）：透明无界面，选完压缩入 cache 并回传 Service -->
+        <!-- AI 选图中转（T5）：透明无界面，选完压缩入 cache 并回传 Service。
+             taskAffinity 清空：NEW_TASK 时独立成栈，选完退出回到选图前的界面，
+             而不是落到 App 主页面（真机踩坑：共享应用任务栈会露出 MainActivity） -->
         <activity
             android:name=".AiImagePickerActivity"
             android:exported="false"
             android:excludeFromRecents="true"
             android:noHistory="true"
+            android:taskAffinity=""
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- 开机自启（v1.2）：BOOT_COMPLETED 是系统保护广播，exported 接收 -->

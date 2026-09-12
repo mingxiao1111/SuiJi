@@ -117,4 +117,25 @@ class NoteTextUtilsTest {
     fun `时间戳格式`() {
         assertTrue(NoteTextUtils.timestamp().matches(Regex("\\d{2}-\\d{2} \\d{2}:\\d{2}")))
     }
+
+    // ---- AI 回应剥 Markdown（a6-4）----
+
+    @Test
+    fun `加粗斜体代码围栏与标题被剥掉`() {
+        val md = "## 标题\n**重点**与*斜体*以及`代码`\n```kotlin\nval a = 1\n```"
+        assertEquals("标题\n重点与斜体以及代码\nval a = 1\n", NoteTextUtils.stripMarkdown(md))
+    }
+
+    @Test
+    fun `链接留文字图片留替代字`() {
+        assertEquals(
+            "看文档和图",
+            NoteTextUtils.stripMarkdown("看[文档](https://a.b/c)和![图](https://a.b/i.png)"),
+        )
+    }
+
+    @Test
+    fun `列表符号与换行保留`() {
+        assertEquals("- 甲\n- 乙", NoteTextUtils.stripMarkdown("- 甲\n- 乙"))
+    }
 }
