@@ -67,6 +67,10 @@ class AiAskView(context: Context) : FrameLayout(context) {
     /** 把手拖动结束：窗口中心交给持有方更新锚点（位置接力）。 */
     var onMoved: ((Int, Int) -> Unit)? = null
 
+    /** 思考开关点击（T6）：翻转由持有方持久化。 */
+    var onToggleThink: (() -> Unit)? = null
+    private var thinkBtn: FrameLayout? = null
+
     // 把手拖动状态（复用悬浮窗长条手柄的交互模式）
     private var gripDownRawX = 0f
     private var gripDownRawY = 0f
@@ -105,6 +109,7 @@ class AiAskView(context: Context) : FrameLayout(context) {
         pill.addView(gripHandle())
         pill.addView(plusButton())
         pill.addView(inputField)
+        pill.addView(thinkButton())
         pill.addView(sendButton {})
 
         // 剪贴板选择面板（a7-1：GONE，点剪贴板按钮展开，自采历史）
@@ -521,6 +526,28 @@ class AiAskView(context: Context) : FrameLayout(context) {
 
     private fun hideIme() {
         context.getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(windowToken, 0)
+    }
+
+    /** 思考开关（T6）：输入框发送旁。开=强调色实底白图标，关=灰图标。未配思考模型由持有方隐藏。 */
+    private fun thinkButton(): FrameLayout = FrameLayout(context).apply {
+        thinkBtn = this
+        layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)).apply { marginStart = dp(8) }
+        addView(
+            ImageView(context).apply {
+                setImageResource(R.drawable.ic_ai_think)
+                layoutParams = LayoutParams(dp(14), dp(14), Gravity.CENTER)
+            },
+        )
+        setOnClickListener { onToggleThink?.invoke() }
+    }
+
+    /** [show] 未配思考模型隐藏；[on] 开启高亮。 */
+    fun setThinkToggle(show: Boolean, on: Boolean) {
+        thinkBtn?.visibility = if (show) VISIBLE else GONE
+        thinkBtn?.background = if (on) AiStyle.roundBg(AiStyle.accent(night), 999f, density) else null
+        (thinkBtn?.getChildAt(0) as? ImageView)?.setColorFilter(
+            if (on) android.graphics.Color.WHITE else AiStyle.textSecondary(night),
+        )
     }
 
     private fun sendButton(onClick: () -> Unit): FrameLayout = FrameLayout(context).apply {

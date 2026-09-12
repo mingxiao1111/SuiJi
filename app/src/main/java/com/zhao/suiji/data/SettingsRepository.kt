@@ -203,6 +203,9 @@ class SettingsRepository(private val context: Context) {
     /** 三态组件总开关（左下角圆钮显示与否）。 */
     val aiAssistantEnabled: Flow<Boolean> = store.data.map { it[AI_ASSISTANT_ENABLED] ?: true }
 
+    /** 思考开关状态记忆（T6：发送旁按钮，开启改用思考模型）。 */
+    val aiThinkOn: Flow<Boolean> = store.data.map { it[AI_THINK_ON] ?: false }
+
     /** 圆钮背景不透明度。 */
     val aiOrbAlpha: Flow<Float> = store.data.map { it[AI_ORB_ALPHA] ?: DEFAULT_AI_ORB_ALPHA }
 
@@ -344,6 +347,8 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAiAssistantEnabled(enabled: Boolean) = store.edit { it[AI_ASSISTANT_ENABLED] = enabled }
 
+    suspend fun setAiThinkOn(on: Boolean) = store.edit { it[AI_THINK_ON] = on }
+
     suspend fun setAiOrbAlpha(alpha: Float) = store.edit { it[AI_ORB_ALPHA] = alpha.coerceIn(0.15f, 0.9f) }
 
     companion object {
@@ -397,6 +402,7 @@ class SettingsRepository(private val context: Context) {
         private val AI_THINK_MODEL = stringPreferencesKey("ai_think_model")
         private val AI_VISION_MODEL = stringPreferencesKey("ai_vision_model")
         private val AI_ASSISTANT_ENABLED = booleanPreferencesKey("ai_assistant_enabled")
+        private val AI_THINK_ON = booleanPreferencesKey("ai_think_on")
         private val AI_ORB_ALPHA = floatPreferencesKey("ai_orb_alpha")
 
         const val DEFAULT_BALL_SIZE_DP = 48

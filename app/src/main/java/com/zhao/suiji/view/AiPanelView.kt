@@ -79,6 +79,10 @@ class AiPanelView(context: Context) : FrameLayout(context) {
     /** 空白处拖动结束：窗口中心交给持有方更新锚点（位置接力，a7-2）。 */
     var onMoved: ((Int, Int) -> Unit)? = null
 
+    /** 思考开关点击（T6）：翻转由持有方持久化。 */
+    var onToggleThink: (() -> Unit)? = null
+    private var thinkBtn: FrameLayout? = null
+
     // 拖动状态（复用悬浮窗手柄的交互模式）
     private var dragDownRawX = 0f
     private var dragDownRawY = 0f
@@ -140,8 +144,7 @@ class AiPanelView(context: Context) : FrameLayout(context) {
         )
 
         // 底部输入栏（无 chips，面板态是追问）
-        inputField = EditText(context).apply {
-            background = null
+        inputField = EditText(context).apply {            background = null
             hint = "继续追问…"
             setHintTextColor(AiStyle.textHint(night))
             setTextColor(AiStyle.textPrimary(night))
@@ -174,6 +177,7 @@ class AiPanelView(context: Context) : FrameLayout(context) {
             setPadding(dp(12), dp(7), dp(7), dp(7))
         }
         pill.addView(inputField)
+        pill.addView(thinkButton())
         pill.addView(sendBtn)
         card.addView(
             pill,
@@ -485,6 +489,27 @@ class AiPanelView(context: Context) : FrameLayout(context) {
 
     private fun scrollToBottom() {
         chatScroll.post { chatScroll.fullScroll(ScrollView.FOCUS_DOWN) }
+    }
+
+    /** 思考开关（T6）：发送旁。开=强调色实底白图标，关=灰图标。未配思考模型由持有方隐藏。 */
+    private fun thinkButton(): FrameLayout = FrameLayout(context).apply {
+        thinkBtn = this
+        layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)).apply { marginStart = dp(8) }
+        addView(
+            ImageView(context).apply {
+                setImageResource(R.drawable.ic_ai_think)
+                layoutParams = LayoutParams(dp(14), dp(14), Gravity.CENTER)
+            },
+        )
+        setOnClickListener { onToggleThink?.invoke() }
+    }
+
+    fun setThinkToggle(show: Boolean, on: Boolean) {
+        thinkBtn?.visibility = if (show) VISIBLE else GONE
+        thinkBtn?.background = if (on) AiStyle.roundBg(AiStyle.accent(night), 999f, density) else null
+        (thinkBtn?.getChildAt(0) as? ImageView)?.setColorFilter(
+            if (on) android.graphics.Color.WHITE else AiStyle.textSecondary(night),
+        )
     }
 
     private fun fireSend() {

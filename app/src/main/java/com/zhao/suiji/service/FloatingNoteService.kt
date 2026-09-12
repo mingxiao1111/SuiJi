@@ -577,6 +577,7 @@ class FloatingNoteService : Service() {
 
     @Volatile private var aiFabVisible = true
     @Volatile private var aiFabAlphaVal = SettingsRepository.DEFAULT_AI_ORB_ALPHA
+    @Volatile private var aiThinkOnVal = false // 思考开关（T6）：状态记忆在 DataStore
 
     /** 订阅 AI 开关与按钮透明度：应用到当前悬浮窗（窗口每次展开都重应用）。 */
     private fun observeAiSettings() {
@@ -588,6 +589,19 @@ class FloatingNoteService : Service() {
                 if (!e && aiUiState != AiUiState.NONE) closeAiUi()
             }
         }
+        scope.launch {
+            settings.aiThinkOn.collect { on ->
+                aiThinkOnVal = on
+                val show = aiCfg?.thinkModel?.isNotBlank() == true
+                aiAsk?.setThinkToggle(show, on)
+                aiPanel?.setThinkToggle(show, on)
+            }
+        }
+    }
+
+    /** 思考开关翻转（T6）：持久化，收集器负责把新状态刷到界面。 */
+    private fun aiToggleThink() {
+        scope.launch { settings.setAiThinkOn(!aiThinkOnVal) }
     }
 
     private fun onAiFabTap() {
@@ -653,6 +667,7 @@ class FloatingNoteService : Service() {
                 aiClipHistory.items()
             }
             onMoved = { cx, cy -> aiAnchorMoved(cx, cy) }
+            onToggleThink = { aiToggleThink() }
             setNoteChipsEnabled(noteChipsEnabled)
             attach(
                 getSystemService(WINDOW_SERVICE) as WindowManager,
@@ -660,6 +675,7 @@ class FloatingNoteService : Service() {
                 aiAnchor,
             )
             setClipHistory(aiClipHistory.items())
+            setThinkToggle(aiCfg?.thinkModel?.isNotBlank() == true, aiThinkOnVal)
             if (aiDraft.isNotEmpty()) inputField.setText(aiDraft) // 草稿回填（T3）
             if (aiNoteAttached) setNoteAttached(true) // 会话中途切回输入框态保持附件
             aiPendingImagePath?.let { setImageAttached(it) } // 待发图片同理（T5）
@@ -676,6 +692,7 @@ class FloatingNoteService : Service() {
             onNewSession = { aiNewSession() }
             onSaveNote = { saveAiAnswerAsNote(it) }
             onMoved = { cx, cy -> aiAnchorMoved(cx, cy) }
+            onToggleThink = { aiToggleThink() }
             attach(
                 getSystemService(WINDOW_SERVICE) as WindowManager,
                 wmHelper.screenWidth, wmHelper.screenHeight,
@@ -684,6 +701,7 @@ class FloatingNoteService : Service() {
             )
             renderAll(aiMessages.toList())
             setSendEnabled(!aiGenerating)
+            setThinkToggle(aiCfg?.thinkModel?.isNotBlank() == true, aiThinkOnVal)
         }
     }
 
@@ -859,11 +877,11 @@ class FloatingNoteService : Service() {
                 aiPanel?.updateMessage(aiMessages[idx])
             }
             try {
-                // 视觉路由（T5）：会话里有图就切视觉模型（未配兜底普通模型，正常入口不会走到）
-                val model = if (aiMessages.any { !it.imagePath.isNullOrBlank() }) {
-                    cfg.visionModel.ifBlank { cfg.chatModel }
-                } else {
-                    cfg.chatModel
+                // 模型路由（T6）：带图走视觉；思考开关开启且已配走思考模型；否则普通模型
+                val model = when {
+                    aiMessages.any { !it.imagePath.isNullOrBlank() } -> cfg.visionModel.ifBlank { cfg.chatModel }
+                    aiThinkOnVal && cfg.thinkModel.isNotBlank() -> cfg.thinkModel
+                    else -> cfg.chatModel
                 }
                 aiClient.streamReply(cfg, model, history).collect { ev ->
                     when (ev) {
