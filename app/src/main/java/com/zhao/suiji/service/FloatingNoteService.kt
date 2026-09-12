@@ -20,6 +20,7 @@ import com.zhao.suiji.ai.AiChatClient
 import com.zhao.suiji.ai.AiConfig
 import com.zhao.suiji.ai.ChatEvent
 import com.zhao.suiji.ai.ChatMessage
+import com.zhao.suiji.ai.ClipHistory
 import com.zhao.suiji.ai.RequestMessage
 import com.zhao.suiji.data.Note
 import com.zhao.suiji.data.SettingsRepository
@@ -572,6 +573,7 @@ class FloatingNoteService : Service() {
     private var aiAnchor: Rect? = null // 悬浮窗卡片矩形快照：AI 输入框/面板原位锚定（a5，收窗前抓取）
     private var aiNoteAttached = false // ＋菜单"插入当前笔记"：随下一条问题携带正文（T4）
     private var aiPendingImagePath: String? = null // ＋菜单"插入图片"压缩后的 cache 路径（T5）
+    private val aiClipHistory = ClipHistory() // 剪贴板自采历史（a7-1：仅内存，进程级）
 
     @Volatile private var aiFabVisible = true
     @Volatile private var aiFabAlphaVal = SettingsRepository.DEFAULT_AI_ORB_ALPHA
@@ -646,12 +648,18 @@ class FloatingNoteService : Service() {
                 aiPendingImagePath = null
                 setImageAttached(null)
             }
+            onClipCaptured = { text ->
+                aiClipHistory.add(text)
+                aiClipHistory.items()
+            }
+            onMoved = { cx, cy -> aiAnchorMoved(cx, cy) }
             setNoteChipsEnabled(noteChipsEnabled)
             attach(
                 getSystemService(WINDOW_SERVICE) as WindowManager,
                 wmHelper.screenWidth, wmHelper.screenHeight,
                 aiAnchor,
             )
+            setClipHistory(aiClipHistory.items())
             if (aiDraft.isNotEmpty()) inputField.setText(aiDraft) // 草稿回填（T3）
             if (aiNoteAttached) setNoteAttached(true) // 会话中途切回输入框态保持附件
             aiPendingImagePath?.let { setImageAttached(it) } // 待发图片同理（T5）
@@ -667,6 +675,7 @@ class FloatingNoteService : Service() {
             onRetry = { aiRetry(it) }
             onNewSession = { aiNewSession() }
             onSaveNote = { saveAiAnswerAsNote(it) }
+            onMoved = { cx, cy -> aiAnchorMoved(cx, cy) }
             attach(
                 getSystemService(WINDOW_SERVICE) as WindowManager,
                 wmHelper.screenWidth, wmHelper.screenHeight,
@@ -703,6 +712,12 @@ class FloatingNoteService : Service() {
             val noteReady = aiNoteContext()?.content?.isNotBlank() == true
             showAiAsk(noteReady)
         }
+    }
+
+    /** AI 界面拖动后的位置接力（a7-2）：锚点跟随拖到的中心——输入框拖到哪，
+     *  发送后面板就在哪绽放、收起重开也留在原地；不落库（临时态，重开悬浮窗重新锚定）。 */
+    private fun aiAnchorMoved(cx: Int, cy: Int) {
+        aiAnchor = Rect(cx, cy, cx, cy)
     }
 
     /** ＋菜单"插入图片"（T5）：未配视觉模型引导配置（用户拍板"后者"），否则拉起选图中转。

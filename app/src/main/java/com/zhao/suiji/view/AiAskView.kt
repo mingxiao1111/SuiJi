@@ -16,6 +16,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.zhao.suiji.R
+import kotlin.math.abs
 import kotlin.math.min
 
 /**
@@ -47,6 +48,10 @@ class AiAskView(context: Context) : FrameLayout(context) {
     private var attachRow: TextView? = null
     private var imageRow: LinearLayout? = null
     private var imageThumb: ImageView? = null
+    private var clipPanel: LinearLayout? = null
+    private var clipList: LinearLayout? = null
+    private var clipEmpty: TextView? = null
+    private var clipHistoryItems: List<String> = emptyList()
 
     var onSend: ((String) -> Unit)? = null
     var onChip: ((String) -> Unit)? = null
@@ -55,6 +60,19 @@ class AiAskView(context: Context) : FrameLayout(context) {
     var onDetachNote: (() -> Unit)? = null
     var onPickImage: (() -> Unit)? = null
     var onRemoveImage: (() -> Unit)? = null
+
+    /** 剪贴板采集（a7-1）：读到的内容交给持有方入列，返回最新历史用于渲染。 */
+    var onClipCaptured: ((String) -> List<String>)? = null
+
+    /** 把手拖动结束：窗口中心交给持有方更新锚点（位置接力）。 */
+    var onMoved: ((Int, Int) -> Unit)? = null
+
+    // 把手拖动状态（复用悬浮窗长条手柄的交互模式）
+    private var gripDownRawX = 0f
+    private var gripDownRawY = 0f
+    private var gripDownX = 0
+    private var gripDownY = 0
+    private var draggingAsk = false
 
     init {
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
@@ -84,9 +102,33 @@ class AiAskView(context: Context) : FrameLayout(context) {
                 weight = 1f
             }
         }
+        pill.addView(gripHandle())
         pill.addView(plusButton())
         pill.addView(inputField)
         pill.addView(sendButton {})
+
+        // 剪贴板选择面板（a7-1：GONE，点剪贴板按钮展开，自采历史）
+        clipList = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        clipEmpty = TextView(context).apply {
+            text = "剪贴板为空。在别的应用复制文字后，回到 AI 输入框会自动记录。"
+            textSize = 12f
+            setTextColor(AiStyle.textHint(night))
+            setPadding(dp(10), dp(9), dp(10), dp(9))
+        }
+        clipPanel = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = GONE
+            background = AiStyle.roundBg(AiStyle.surface(night), 16f, density, AiStyle.stroke(night))
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            elevation = dp(6).toFloat()
+            addView(clipList!!)
+            addView(clipEmpty!!)
+        }
+        content.addView(
+            clipPanel!!,
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { bottomMargin = dp(8) },
+        )
 
         // ＋菜单（GONE，点＋展开）：插入当前笔记（T4）/ 插入图片（T5）
         menuRow = LinearLayout(context).apply {
@@ -269,6 +311,8 @@ class AiAskView(context: Context) : FrameLayout(context) {
         animate().alpha(1f).translationY(0f).setDuration(200L).start()
         inputField.requestFocus()
         handler.postDelayed({ showIme() }, 150L)
+        // 持焦后采集当前剪贴板（a7-1 自采历史的时机之一）
+        handler.postDelayed({ if (windowManager != null) readClipboardNow() }, 350L)
         handler.postDelayed(imeCheck, 400L)
     }
 
@@ -330,6 +374,7 @@ class AiAskView(context: Context) : FrameLayout(context) {
     }
 
     private fun toggleMenu() {
+        clipPanel?.visibility = GONE
         menuRow?.let { it.visibility = if (it.visibility == VISIBLE) GONE else VISIBLE }
     }
 
@@ -351,27 +396,131 @@ class AiAskView(context: Context) : FrameLayout(context) {
         setOnClickListener { toggleMenu() }
     }
 
-    /** 剪贴板速贴（a6-2）：chip 行最右常驻，一键把剪贴板文本填进输入框。 */
+    /** 剪贴板速贴（a7-1）：chip 行最右，与建议气泡同尺寸；点开选择面板选一条填入。 */
     private fun clipboardButton(): FrameLayout = FrameLayout(context).apply {
-        layoutParams = LinearLayout.LayoutParams(dp(28), dp(28))
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         background = AiStyle.roundBg(AiStyle.surface(night), 999f, density, AiStyle.stroke(night))
+        setPadding(dp(12), dp(7), dp(12), dp(7))
         elevation = dp(3).toFloat()
         addView(ImageView(context).apply {
             setImageResource(R.drawable.ic_ai_clipboard)
             setColorFilter(AiStyle.textSecondary(night))
-            layoutParams = LayoutParams(dp(13), dp(13), Gravity.CENTER)
+            layoutParams = LayoutParams(dp(15), dp(15), Gravity.CENTER)
         })
-        setOnClickListener { pasteFromClipboard() }
+        setOnClickListener { toggleClipPanel() }
     }
 
-    private fun pasteFromClipboard() {
-        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager ?: return
+    private fun toggleClipPanel() {
+        val panel = clipPanel ?: return
+        if (panel.visibility == VISIBLE) {
+            panel.visibility = GONE
+            return
+        }
+        clipHistoryItems = readClipboardNow() // 打开时实时采集一次
+        renderClipList()
+        menuRow?.visibility = GONE
+        panel.visibility = VISIBLE
+    }
+
+    /** 读当前剪贴板（悬浮窗持焦=合法读取方），交给持有方入列并取回最新历史。 */
+    private fun readClipboardNow(): List<String> {
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+            ?: return clipHistoryItems
         val text = cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.trim().orEmpty()
         if (text.isNotEmpty()) {
-            inputField.setText(text)
-            inputField.setSelection(text.length)
-            inputField.requestFocus()
+            onClipCaptured?.let { clipHistoryItems = it(text) }
         }
+        return clipHistoryItems
+    }
+
+    private fun renderClipList() {
+        val list = clipList ?: return
+        list.removeAllViews()
+        clipEmpty?.visibility = if (clipHistoryItems.isEmpty()) VISIBLE else GONE
+        clipHistoryItems.take(6).forEach { text ->
+            list.addView(
+                TextView(context).apply {
+                    this.text = text
+                    textSize = 13.5f
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setTextColor(AiStyle.textPrimary(night))
+                    setPadding(dp(10), dp(9), dp(10), dp(9))
+                    setOnClickListener {
+                        inputField.setText(text)
+                        inputField.setSelection(text.length)
+                        inputField.requestFocus()
+                        clipPanel?.visibility = GONE
+                    }
+                },
+            )
+        }
+    }
+
+    /** Service 喂数历史（面板开着时同步刷新）。 */
+    fun setClipHistory(items: List<String>) {
+        clipHistoryItems = items
+        if (clipPanel?.visibility == VISIBLE) renderClipList()
+    }
+
+    /** 胶囊左端把手（a7-2）：复用悬浮窗长条手柄的按住即拖交互，移动整个输入框。 */
+    private fun gripHandle(): FrameLayout = FrameLayout(context).apply {
+        layoutParams = LinearLayout.LayoutParams(dp(20), LinearLayout.LayoutParams.MATCH_PARENT)
+            .apply { marginEnd = dp(6) }
+        addView(
+            android.view.View(context).apply {
+                background = AiStyle.roundBg(if (night) 0x33EBEBF5 else 0x29787880, 999f, density)
+                layoutParams = LayoutParams(dp(5), dp(22), Gravity.CENTER)
+            },
+        )
+        setOnTouchListener { _, event -> handleGripDrag(event) }
+    }
+
+    private fun handleGripDrag(event: MotionEvent): Boolean {
+        val p = params ?: return false
+        if (!anchored) return false // 底部居中兜底形态不提供拖动
+        val slop = 10 * density
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                gripDownRawX = event.rawX
+                gripDownRawY = event.rawY
+                gripDownX = p.x
+                gripDownY = p.y
+                draggingAsk = false
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!draggingAsk &&
+                    (abs(event.rawX - gripDownRawX) > slop || abs(event.rawY - gripDownRawY) > slop)
+                ) {
+                    draggingAsk = true
+                    hideIme()
+                    menuRow?.visibility = GONE
+                    clipPanel?.visibility = GONE
+                }
+                if (draggingAsk) {
+                    p.x = (gripDownX + (event.rawX - gripDownRawX).toInt())
+                        .coerceIn(dp(EDGE_DP), (screenWidth - p.width - dp(EDGE_DP)).coerceAtLeast(dp(EDGE_DP)))
+                    p.y = (gripDownY + (event.rawY - gripDownRawY).toInt())
+                        .coerceIn(dp(EDGE_DP), (screenHeight - p.height - dp(EDGE_DP)).coerceAtLeast(dp(EDGE_DP)))
+                    baseY = p.y // 键盘避让基准同步，否则 350ms 轮询会弹回原位
+                    updateLayout()
+                }
+                return true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (draggingAsk && event.actionMasked == MotionEvent.ACTION_UP) {
+                    onMoved?.invoke(p.x + p.width / 2, p.y + p.height / 2)
+                }
+                draggingAsk = false
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun hideIme() {
+        context.getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(windowToken, 0)
     }
 
     private fun sendButton(onClick: () -> Unit): FrameLayout = FrameLayout(context).apply {

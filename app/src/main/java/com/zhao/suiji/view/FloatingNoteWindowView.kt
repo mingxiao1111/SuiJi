@@ -215,6 +215,12 @@ class FloatingNoteWindowView(context: Context) : FrameLayout(context) {
             (aiFab.getChildAt(0) as? android.widget.ImageView)?.imageTintList =
                 android.content.res.ColorStateList.valueOf(iconColor)
         }
+        // a7-3：按钮可见时编辑器底部留出按钮高度（34dp+10dp 边距+余量），字不流到按钮下面
+        editor.setPadding(
+            editor.paddingLeft, editor.paddingTop, editor.paddingRight,
+            ScreenUtils.dpToPx(context, if (show) 46 else 12),
+        )
+        if (show) aiFab.alpha = 1f // IME 轮询会在打字时接管淡出（a7-3）
     }
 
     /** 窗口卡片（不含长条）在屏幕上的矩形：AI 输入框/面板锚定用（a5 位置跟随）；未挂载返回 null。 */
@@ -858,6 +864,7 @@ class FloatingNoteWindowView(context: Context) : FrameLayout(context) {
         restoreImeShift()
         imm.hideSoftInputFromWindow(editor.windowToken, 0)
         editor.clearFocus()
+        updateAiFabFadeForIme() // a7-3：退出编辑淡回 AI 按钮（轮询已停，手动收尾）
         if (p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE == 0) {
             p.flags = p.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
             updateLayout()
@@ -911,11 +918,25 @@ class FloatingNoteWindowView(context: Context) : FrameLayout(context) {
             override fun run() {
                 if (deleted || !editor.hasFocus()) return
                 recheckImeShift()
+                updateAiFabFadeForIme()
                 postDelayed(this, IME_POLL_MS)
             }
         }
         imePollRunnable = r
         postDelayed(r, IME_POLL_MS)
+    }
+
+    /** a7-3：键盘弹出时 AI 按钮淡出让位（打字区零遮挡零误触），收起淡回。
+     *  以 IME 可见性为触发（焦点太粘：BACK 只收键盘不清焦点，真机踩坑）。 */
+    private fun updateAiFabFadeForIme() {
+        if (aiFab.visibility != VISIBLE) return
+        val rect = android.graphics.Rect()
+        getWindowVisibleDisplayFrame(rect)
+        val imeVisible = screenHeight - rect.bottom > screenHeight / 4
+        val target = if (imeVisible) 0f else 1f
+        if (kotlin.math.abs(aiFab.alpha - target) > 0.01f) {
+            aiFab.animate().alpha(target).setDuration(240L).start()
+        }
     }
 
     private fun stopImePolling() {

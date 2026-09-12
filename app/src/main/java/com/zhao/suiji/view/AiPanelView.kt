@@ -75,6 +75,16 @@ class AiPanelView(context: Context) : FrameLayout(context) {
 
     /** 回答气泡下"存为笔记"（T4）：回传消息 id，由 Service 落库后调 [markNoteSaved]。 */
     var onSaveNote: ((Long) -> Unit)? = null
+
+    /** 空白处拖动结束：窗口中心交给持有方更新锚点（位置接力，a7-2）。 */
+    var onMoved: ((Int, Int) -> Unit)? = null
+
+    // 拖动状态（复用悬浮窗手柄的交互模式）
+    private var dragDownRawX = 0f
+    private var dragDownRawY = 0f
+    private var dragDownX = 0
+    private var dragDownY = 0
+    private var draggingPanel = false
     private val saveActions = HashMap<Long, TextView>()
     private var typingAnim: android.animation.ValueAnimator? = null
 
@@ -171,10 +181,55 @@ class AiPanelView(context: Context) : FrameLayout(context) {
                 .apply { topMargin = dp(8) },
         )
 
+        // 空白处拖动（a7-2）：card 的 onTouch 只会收到未被子控件消费的事件——
+        // 消息区/输入栏/按钮各自消费，剩下的天然就是空白（头部、留白）
+        card.setOnTouchListener { _, event -> handleBlankDrag(event) }
+
         addView(
             card,
             LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
         )
+    }
+
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private fun handleBlankDrag(event: android.view.MotionEvent): Boolean {
+        val p = params ?: return false
+        if (!anchored) return false // 底部居中兜底形态不提供拖动
+        val slop = 10 * density
+        when (event.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                dragDownRawX = event.rawX
+                dragDownRawY = event.rawY
+                dragDownX = p.x
+                dragDownY = p.y
+                draggingPanel = false
+                return true
+            }
+            android.view.MotionEvent.ACTION_MOVE -> {
+                if (!draggingPanel &&
+                    (kotlin.math.abs(event.rawX - dragDownRawX) > slop || kotlin.math.abs(event.rawY - dragDownRawY) > slop)
+                ) {
+                    draggingPanel = true
+                }
+                if (draggingPanel) {
+                    p.x = (dragDownX + (event.rawX - dragDownRawX).toInt())
+                        .coerceIn(dp(EDGE_DP), (screenWidth - p.width - dp(EDGE_DP)).coerceAtLeast(dp(EDGE_DP)))
+                    p.y = (dragDownY + (event.rawY - dragDownRawY).toInt())
+                        .coerceIn(dp(EDGE_DP), (screenHeight - p.height - dp(EDGE_DP)).coerceAtLeast(dp(EDGE_DP)))
+                    baseY = p.y // 键盘避让基准同步
+                    updateLayout()
+                }
+                return true
+            }
+            android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                if (draggingPanel && event.actionMasked == android.view.MotionEvent.ACTION_UP) {
+                    onMoved?.invoke(p.x + p.width / 2, p.y + p.height / 2)
+                }
+                draggingPanel = false
+                return true
+            }
+        }
+        return false
     }
 
     /** [growFromInput]=true：从输入框"原位绽放"成面板（a5 锚定态支点在中心；
