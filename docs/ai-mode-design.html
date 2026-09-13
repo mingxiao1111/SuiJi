@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>随记 · AI 助手设计稿 v2（苹果扁平极简 · 独立三态组件）</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #F5F5F7; color: #1d1d1f;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    padding: 40px 30px 64px;
+  }
+  h1 { font-size: 21px; font-weight: 700; letter-spacing: .2px; }
+  .sub { font-size: 13.5px; color: #86868b; margin: 8px 0 30px; }
+  .row { display: flex; gap: 30px; flex-wrap: wrap; align-items: flex-start; }
+  .stage { display: flex; flex-direction: column; gap: 10px; }
+  .caption { font-size: 13px; color: #6e6e73; text-align: center; }
+
+  /* 假屏幕 */
+  .screen { width: 300px; height: 430px; border-radius: 18px; position: relative; overflow: hidden;
+    background: linear-gradient(160deg, #ffffff 0%, #eef0f4 100%); border: 1px solid rgba(0,0,0,.05); }
+  .screen .fake { padding: 18px; }
+  .fake .bar { height: 10px; border-radius: 5px; background: rgba(0,0,0,.06); margin-bottom: 10px; }
+  .fake .bar.w2 { width: 70%; } .fake .bar.w4 { width: 45%; }
+  .fake .block { height: 88px; border-radius: 12px; background: rgba(0,0,0,.045); margin-bottom: 12px; }
+
+  /* ① 圆钮 */
+  .orb { position: absolute; left: 14px; bottom: 16px; width: 46px; height: 46px; border-radius: 50%;
+    background: rgba(28,28,30,.30); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,.92);
+    font-size: 18px; box-shadow: 0 4px 14px rgba(0,0,0,.12); }
+  .orb.generating::after { content: ""; position: absolute; top: 1px; right: 1px; width: 9px; height: 9px;
+    border-radius: 50%; background: #fff; animation: breathe 1.6s ease-in-out infinite; }
+  @keyframes breathe { 0%,100% { opacity:.25; transform: scale(.8);} 50% { opacity:1; transform: scale(1);} }
+
+  /* ② 输入框态 */
+  .ask { position: absolute; left: 15px; right: 15px; bottom: 16px; }
+  .pill { display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 25px;
+    padding: 8px 8px 8px 14px; box-shadow: 0 10px 34px rgba(0,0,0,.13); }
+  .plus { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 17px; color: #1d1d1f; }
+  .ph { flex: 1; font-size: 14px; color: #8e8e93; }
+  .go { width: 30px; height: 30px; border-radius: 50%; background: #1d1d1f; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 13px; }
+  .suggest { display: flex; flex-wrap: nowrap; gap: 7px; margin-top: 12px; justify-content: center; }
+  .sug { font-size: 12px; padding: 7px 12px; border-radius: 999px; background: #fff; color: #3a3a3c;
+    border: 1px solid rgba(0,0,0,.045); box-shadow: 0 4px 14px rgba(0,0,0,.10); white-space: nowrap; }
+  .orb.cand { position: static; }
+
+  /* ③ 面板态 */
+  .panel { width: 320px; height: 470px; border-radius: 26px; background: #fff; position: relative;
+    box-shadow: 0 16px 48px rgba(0,0,0,.14); display: flex; flex-direction: column; overflow: hidden; }
+  .close { position: absolute; top: 12px; right: 12px; width: 26px; height: 26px; border-radius: 50%;
+    background: rgba(120,120,128,.10); display: flex; align-items: center; justify-content: center;
+    font-size: 12px; color: #86868b; z-index: 2; }
+  .talk { flex: 1; padding: 20px 16px 8px; display: flex; flex-direction: column; gap: 12px; }
+  .me { align-self: flex-end; max-width: 80%; background: #e9e9eb; color: #1d1d1f;
+    padding: 9px 13px; border-radius: 18px 18px 5px 18px; font-size: 14px; line-height: 1.6; }
+  .ai { align-self: flex-start; max-width: 92%; font-size: 14px; line-height: 1.7; color: #1d1d1f; }
+  .ai .save { display: inline-block; margin-top: 6px; font-size: 11.5px; color: #86868b;
+    text-decoration: underline dotted; text-underline-offset: 3px; }
+  .caret { display: inline-block; width: 2px; height: 15px; background: #1d1d1f; vertical-align: -2px;
+    margin-left: 1px; animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .errline { align-self: flex-start; font-size: 12.5px; color: #d93a2f; background: rgba(217,58,47,.07);
+    padding: 7px 12px; border-radius: 12px; }
+  .errline b { font-weight: 600; }
+  .attach { display: flex; gap: 8px; padding: 0 16px 8px; }
+  .att { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #3a3a3c;
+    background: rgba(120,120,128,.10); padding: 6px 11px; border-radius: 10px; }
+  .att i { font-style: normal; color: #86868b; }
+  .panel .pill { box-shadow: none; border: 1px solid rgba(0,0,0,.07); margin: 0 12px 12px; border-radius: 21px; }
+
+  /* ④ 夜间 */
+  .night { background: #1c1c1e; }
+  .night .pill { background: #2c2c2e; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+  .night .ph { color: #98989e; } .night .plus { color: #ebEBf5; }
+  .night .go { background: #ebEBf5; color: #1c1c1e; }
+  .night .me { background: #3a3a3c; color: #f2f2f7; }
+  .night .ai { color: #ebEBf5; } .night .ai .caret { background: #ebEBf5; }
+  .night .sug, .night .att { background: #2c2c2e; color: #d1d1d6; border-color: rgba(235,235,245,.08); }
+  .night .sug { box-shadow: 0 4px 14px rgba(0,0,0,.4); }
+  .night .close { background: rgba(235,235,245,.12); color: #98989e; }
+  .night .panel .pill { border-color: rgba(235,235,245,.1); }
+  .night .errline { color: #ff8a80; background: rgba(255,138,128,.1); }
+
+  /* 任务角标 */
+  .tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 6px; margin-left: 6px;
+    background: #2b6cb0; color: #fff; vertical-align: 1px; font-weight: 500; }
+  .tag.t3 { background: #7a5cb8; } .tag.t4 { background: #2f855a; }
+  .tag.t5 { background: #b7791f; } .tag.t6 { background: #a04040; }
+
+  /* Lucide 图标（开源 ISC，与 App 内 ic_t_*.xml 同源转换） */
+  .orb svg, .plus svg, .go svg, .close svg, .att svg { display: block; }
+  .orb svg { width: 20px; height: 20px; }
+  .plus svg { width: 16px; height: 16px; }
+  .go svg { width: 14px; height: 14px; }
+  .close svg { width: 12px; height: 12px; }
+  .att svg { width: 13px; height: 13px; }
+
+  .notes { margin-top: 44px; max-width: 1080px; font-size: 13.5px; line-height: 2.0; }
+  .notes h2 { font-size: 15px; margin-bottom: 8px; }
+  .notes li { margin-left: 20px; color: #3a3a3c; }
+  .legend { margin-top: 10px; font-size: 12.5px; color: #86868b; }
+</style>
+</head>
+<body>
+
+<h1>随记 · AI 助手设计稿 v2</h1>
+<p class="sub">苹果扁平极简 · 独立三态组件：左下角圆钮 → 极简输入框 → 展开面板。与笔记窗完全解耦，互不干扰。角标为落地任务号。</p>
+
+<div class="row">
+
+  <!-- ① 圆钮 -->
+  <div class="stage">
+    <div class="screen">
+      <div class="fake">
+        <div class="bar w2"></div><div class="bar"></div><div class="block"></div>
+        <div class="bar w4"></div><div class="bar w2"></div><div class="bar"></div>
+      </div>
+      <div class="orb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><path d="M20.2 20.2c2.04-2.03.02-7.36-4.5-11.9-4.54-4.52-9.87-6.54-11.9-4.5-2.04 2.03-.02 7.36 4.5 11.9 4.54 4.52 9.87 6.54 11.9 4.5Z"/><path d="M15.7 15.7c4.52-4.54 6.54-9.87 4.5-11.9-2.03-2.04-7.36-.02-11.9 4.5-4.52 4.54-6.54 9.87-4.5 11.9 2.03 2.04 7.36.02 11.9-4.5Z"/></svg></div>
+    </div>
+    <div class="caption">① 常驻圆钮（半透明 · 可调透明度 · 设置可关）</div>
+  </div>
+
+  <!-- ①b 生成中 -->
+  <div class="stage">
+    <div class="screen">
+      <div class="fake">
+        <div class="bar w2"></div><div class="bar"></div><div class="block"></div>
+        <div class="bar w4"></div><div class="bar w2"></div><div class="bar"></div>
+      </div>
+      <div class="orb generating"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><path d="M20.2 20.2c2.04-2.03.02-7.36-4.5-11.9-4.54-4.52-9.87-6.54-11.9-4.5-2.04 2.03-.02 7.36 4.5 11.9 4.54 4.52 9.87 6.54 11.9 4.5Z"/><path d="M15.7 15.7c4.52-4.54 6.54-9.87 4.5-11.9-2.03-2.04-7.36-.02-11.9 4.5-4.52 4.54-6.54 9.87-4.5 11.9 2.03 2.04 7.36.02 11.9-4.5Z"/></svg></div>
+    </div>
+    <div class="caption">①b 收起后生成中：呼吸点提示"答案在路上"</div>
+  </div>
+
+  <!-- ② 输入框态 -->
+  <div class="stage">
+    <div class="screen">
+      <div class="fake">
+        <div class="bar w2"></div><div class="bar"></div><div class="block"></div>
+        <div class="bar w4"></div><div class="bar w2"></div><div class="bar"></div>
+      </div>
+      <div class="ask">
+        <div class="pill">
+          <div class="plus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span class="tag t4" style="margin:-6px 0 0 -14px">T4·5</span></div>
+          <div class="ph">输入你的问题…</div>
+          <div class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></div>
+        </div>
+        <div class="suggest">
+          <span class="sug">整理这篇</span>
+          <span class="sug">解释</span>
+          <span class="sug">翻译</span>
+          <span class="sug">总结</span>
+        </div>
+      </div>
+    </div>
+    <div class="caption">② 点圆钮 → 输入框浮现（建议气泡在下方）</div>
+  </div>
+
+  <!-- ③ 面板态 -->
+  <div class="stage">
+    <div class="panel">
+      <div class="close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></div>
+      <div class="talk">
+        <div class="me">这篇笔记里我要做的事帮我理一下</div>
+        <div class="ai">两件事：<br>1. 和设计师对齐 v2.1 视觉（含输入栏、气泡暗色）<br>2. 向老王要授权码（明天）<span class="caret"></span>
+          <br><span class="save">存为笔记<span class="tag t4">T4</span></span>
+        </div>
+        <div class="errline">网络中断，回答未完成 <b>重试</b></div>
+      </div>
+      <div class="attach"><div class="att"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>当前笔记<i>✕</i><span class="tag t4">T4</span></div></div>
+      <div class="pill">
+        <div class="plus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></div>
+        <div class="ph">继续追问…</div>
+        <div class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></div>
+      </div>
+    </div>
+    <div class="caption">③ 发送后原位展开 · 多轮追问（用户灰气泡 / AI 纯文本）</div>
+  </div>
+
+  <!-- ④ 夜间 -->
+  <div class="stage">
+    <div class="panel night">
+      <div class="close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></div>
+      <div class="talk">
+        <div class="me">StateFlow 和 LiveData 怎么选</div>
+        <div class="ai">简单说：新项目直接 StateFlow。<br>· LiveData 限主线程<br>· StateFlow 可选调度器、可组合<span class="caret"></span>
+          <br><span class="save" style="color:#98989e">存为笔记</span>
+        </div>
+      </div>
+      <div class="pill">
+        <div class="plus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></div>
+        <div class="ph">继续追问…</div>
+        <div class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></div>
+      </div>
+    </div>
+    <div class="caption">④ 夜间配色（跟随系统）</div>
+  </div>
+
+</div>
+
+<div class="row" style="margin-top: 38px;">
+  <div class="stage" style="width: 100%;">
+    <div style="display:flex; gap:34px; align-items:flex-start; justify-content:center; background:#fff; border-radius:22px; padding:24px 30px 20px; box-shadow:0 8px 28px rgba(0,0,0,.07); width: fit-content; margin: 0 auto;">
+      <div style="display:flex; flex-direction:column; align-items:center; gap:9px;">
+        <div class="orb cand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></svg></div>
+        <div style="font-size:11.5px; color:#86868b;">A 星芒</div>
+      </div>
+      <div style="display:flex; flex-direction:column; align-items:center; gap:9px;">
+        <div class="orb cand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg></div>
+        <div style="font-size:11.5px; color:#86868b;">B 机器人</div>
+      </div>
+      <div style="display:flex; flex-direction:column; align-items:center; gap:9px;">
+        <div class="orb cand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></svg></div>
+        <div style="font-size:11.5px; color:#86868b;">C 魔杖</div>
+      </div>
+      <div style="display:flex; flex-direction:column; align-items:center; gap:9px;">
+        <div class="orb cand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M9 13a4.5 4.5 0 0 0 3-4"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M12 13h4"/><path d="M12 18h6a2 2 0 0 1 2 2v1"/><path d="M12 8h8"/><path d="M16 8V5a2 2 0 0 1 2-2"/><circle cx="16" cy="13" r=".5"/><circle cx="18" cy="3" r=".5"/><circle cx="20" cy="21" r=".5"/><circle cx="20" cy="8" r=".5"/></svg></div>
+        <div style="font-size:11.5px; color:#86868b;">D 脑回路</div>
+      </div>
+      <div style="display:flex; flex-direction:column; align-items:center; gap:9px;">
+        <div class="orb cand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><path d="M20.2 20.2c2.04-2.03.02-7.36-4.5-11.9-4.54-4.52-9.87-6.54-11.9-4.5-2.04 2.03-.02 7.36 4.5 11.9 4.54 4.52 9.87 6.54 11.9 4.5Z"/><path d="M15.7 15.7c4.52-4.54 6.54-9.87 4.5-11.9-2.03-2.04-7.36-.02-11.9 4.5-4.52 4.54-6.54 9.87-4.5 11.9 2.03 2.04 7.36.02 11.9-4.5Z"/></svg></div>
+        <div style="font-size:11.5px; color:#1d1d1f; font-weight:600;">E 原子 · 已选定</div>
+      </div>
+    </div>
+    <div class="caption">AI 圆钮图标候选（均为 Lucide 开源图形）——挑一个字母即可，都不满意就继续找</div>
+  </div>
+</div>
+
+<div class="notes">
+  <h2>设计说明</h2>
+  <ul>
+    <li><b>独立组件，零耦合</b>：圆钮 / 输入框 / 面板是新的 overlay，挂同一前台服务；笔记窗代码不动，出现时笔记窗自动收为竖条。</li>
+    <li><b>苹果扁平语言</b>：无描边、无渐变、无彩色；纯白面板 + 柔和弥散阴影浮起；占位灰 #8E8E93、用户气泡 iOS 灰 #E9E9EB、正文近黑 #1D1D1F。</li>
+    <li><b>AI 回答不做气泡</b>：纯文本流式左对齐 + 尾部光标（ChatGPT 式），比双气泡更干净；用户消息保留浅灰胶囊以区分问答。</li>
+    <li><b>三态动画</b>：圆钮隐去 → 输入框淡入上浮（≤250ms）；发送时输入框原位形变展开成面板（同一个 View 的尺寸动画，不是两扇窗）。</li>
+    <li><b>收起即后台</b>：面板 ✕ 或点外部 → 回圆钮，生成继续，圆钮呼吸点提示；回来点开答案已就绪。</li>
+    <li><b>图标体系：Lucide</b>（开源 ISC 协议，可直接商用）。四角星 = 业界通用 AI 符号（Gemini / Apple Intelligence / 豆包同款语义）；发送键用 iOS 式"上箭头"。App 内以 vector drawable（ic_ai_*.xml）落地，描边 / 端点圆角与库一致，不引入运行时依赖。</li>
+    <li><b>思考开关（T6）</b>：输入框发送键左侧，未配置思考模型时隐藏。</li>
+  </ul>
+  <p class="legend">角标：T2 最小闭环（本次）· T3 体验打磨 · T4 产出回流 · T5 图片 · T6 思考开关。设计稿仅为参照，以真机效果为准。</p>
+</div>
+
+</body>
+</html>
